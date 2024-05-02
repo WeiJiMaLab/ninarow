@@ -41,4 +41,4 @@ Contributors should try to run utils/precommit.sh from the utils/ directory befo
 The dependencies for this script are documented in the script itself.
 
 # Documentation
-Documentation can be found at https://github.com/WeiJiMaLab/ninarow
+Documentation can be found at https://weijimalab.github.io/ninarow/
