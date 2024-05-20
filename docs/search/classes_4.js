@@ -1,6 +1,5 @@
 var searchData=
 [
-  ['featuregroupweight_0',['FeatureGroupWeight',['../structNInARow_1_1FeatureGroupWeight.html',1,'NInARow']]],
-  ['featurelist_1',['FeatureList',['../classmodel__fitting_1_1board__explorer_1_1FeatureList.html',1,'model_fitting::board_explorer']]],
-  ['featurelistitem_2',['FeatureListItem',['../classmodel__fitting_1_1board__explorer_1_1FeatureListItem.html',1,'model_fitting::board_explorer']]]
+  ['defaultmodel_0',['DefaultModel',['../classmodel__fitting_1_1model__fit_1_1DefaultModel.html',1,'model_fitting::model_fit']]],
+  ['doublevector_1',['DoubleVector',['../classmodel__fitting_1_1fourbynine_1_1DoubleVector.html',1,'model_fitting::fourbynine']]]
 ];

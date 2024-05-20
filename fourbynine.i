@@ -9,10 +9,14 @@
 #include "ninarow_pattern.h"
 #include "ninarow_heuristic.h"
 #include "ninarow_heuristic_feature.h"
+#include "ninarow_vectorized_feature_evaluator.h"
 #include "fourbynine_features.h"
 #include "player.h"
 #include "searches.h"
+
+typedef long unsigned int size_t;
 %}
+typedef long unsigned int size_t;
 
 %include "stdint.i"
 %include "std_string.i"
@@ -47,6 +51,7 @@
 %include "ninarow_pattern.h"
 %include "ninarow_heuristic.h"
 %include "ninarow_heuristic_feature.h"
+%include "ninarow_vectorized_feature_evaluator.h"
 %include "fourbynine_features.h"
 %include "player.h"
 %include "searches.h"
@@ -61,9 +66,14 @@
 %template(fourbynine_heuristic_feature_with_metadata) NInARow::HeuristicFeatureWithMetadata<NInARow::Board<4, 9, 4>>;
 %template(fourbynine_game_tree_node) Node<NInARow::Board<4, 9, 4>>;
 %template(fourbynine_bfs_node) BFSNode<NInARow::Board<4, 9, 4>>;
-
+%template(fourbynine_feature_evaluator) NInARow::VectorizedFeatureEvaluator<NInARow::Board<4, 9, 4>>;
 %template(DoubleVector) std::vector<double>;
+namespace std {
+  %template(SizeTVector) vector<size_t>;
+  %template(SizeTVectorVector) vector<std::vector<size_t>>;
+}
 %template(MoveVector) std::vector<NInARow::Move<4, 9, 4>>;
+%template(BoardVector) std::vector<NInARow::Board<4, 9, 4>>;
 %template(NodeVector) std::vector<std::shared_ptr<Node<NInARow::Board<4, 9, 4>>>>;
 %template(BFSNodeVector) std::vector<std::shared_ptr<BFSNode<NInARow::Board<4, 9, 4>>>>;
 %template(FeatureGroupWeightVector) std::vector<NInARow::FeatureGroupWeight>;

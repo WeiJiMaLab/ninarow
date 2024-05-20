@@ -11,10 +11,19 @@
 \item 
 std\+::size\+\_\+t \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a64b557eef6163708c1d4eed2152e0452}{register\+\_\+feature}} (const \mbox{\hyperlink{classNInARow_1_1HeuristicFeature}{Heuristic\+Feature}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \&feature)
 \item 
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a0cabe8bf99826dd6f6405636e97ee251}{query\+\_\+pieces}} (const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&b, Player player) const
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a90503ebd711f8fe8cade5aa13d4237ac}{query\+\_\+pieces}} (const std\+::vector$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \&boards, Player player) const
 \item 
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a1c7508f7046e0516ab88d7b14f7562fe}{query\+\_\+spaces}} (const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&b) const
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a04bc304abc09bf77efebd388cf57c5aa}{query\+\_\+spaces}} (const std\+::vector$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \&boards) const
 \end{DoxyCompactItemize}
+\textbf{ }\par
+\begin{DoxyCompactItemize}
+\item 
+std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator_a66a7eb771e13a334a98e48c710b13cc0}{query\+\_\+pieces}} (const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&board, Player player) const
+\item 
+\Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_ac3a5bb9678c3574c68853852d2cbff18}\label{classNInARow_1_1VectorizedFeatureEvaluator_ac3a5bb9678c3574c68853852d2cbff18} 
+std\+::vector$<$ std\+::size\+\_\+t $>$ {\bfseries query\+\_\+spaces} (const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&board) const
+\end{DoxyCompactItemize}
+
 
 
 \doxysubsection{Detailed Description}
@@ -40,18 +49,25 @@ Registers a number of features that can all be evaluated simultaneously and effi
 Constructor. 
 
 \doxysubsection{Member Function Documentation}
-\Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_a0cabe8bf99826dd6f6405636e97ee251}\label{classNInARow_1_1VectorizedFeatureEvaluator_a0cabe8bf99826dd6f6405636e97ee251} 
+\Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_a66a7eb771e13a334a98e48c710b13cc0}\label{classNInARow_1_1VectorizedFeatureEvaluator_a66a7eb771e13a334a98e48c710b13cc0} 
 \index{NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}!query\_pieces@{query\_pieces}}
 \index{query\_pieces@{query\_pieces}!NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}}
-\doxysubsubsection{\texorpdfstring{query\_pieces()}{query\_pieces()}}
+\doxysubsubsection{\texorpdfstring{query\_pieces()}{query\_pieces()}\hspace{0.1cm}{\footnotesize\ttfamily [1/2]}}
 {\footnotesize\ttfamily template$<$typename \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \\
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{NIn\+ARow\+::\+Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::query\+\_\+pieces (\begin{DoxyParamCaption}\item[{const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&}]{b,  }\item[{Player}]{player }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
+std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{NIn\+ARow\+::\+Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::query\+\_\+pieces (\begin{DoxyParamCaption}\item[{const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&}]{board,  }\item[{Player}]{player }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
 
-Given a board and a player, count the number of pieces that the player has on the board which overlap with each of our registered features\textquotesingle{} pieces.
+Helper functions for calling query\+\_\+pieces/spaces on single board inputs easily. \Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_a90503ebd711f8fe8cade5aa13d4237ac}\label{classNInARow_1_1VectorizedFeatureEvaluator_a90503ebd711f8fe8cade5aa13d4237ac} 
+\index{NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}!query\_pieces@{query\_pieces}}
+\index{query\_pieces@{query\_pieces}!NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}}
+\doxysubsubsection{\texorpdfstring{query\_pieces()}{query\_pieces()}\hspace{0.1cm}{\footnotesize\ttfamily [2/2]}}
+{\footnotesize\ttfamily template$<$typename \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \\
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{NIn\+ARow\+::\+Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::query\+\_\+pieces (\begin{DoxyParamCaption}\item[{const std\+::vector$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \&}]{boards,  }\item[{Player}]{player }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
+
+Given a list of boards and a player, count the number of pieces that the player has on each board which overlap with each of our registered features\textquotesingle{} pieces.
 
 
 \begin{DoxyParams}{Parameters}
-{\em b} & The board to evaluate. \\
+{\em boards} & The boards to evaluate. \\
 \hline
 {\em player} & The player whose pieces we are evaluating.\\
 \hline
@@ -59,18 +75,18 @@ Given a board and a player, count the number of pieces that the player has on th
 \begin{DoxyReturn}{Returns}
 A list of counts representing the number of pieces that the player has on the board that overlap with each feature in order. 
 \end{DoxyReturn}
-\Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_a1c7508f7046e0516ab88d7b14f7562fe}\label{classNInARow_1_1VectorizedFeatureEvaluator_a1c7508f7046e0516ab88d7b14f7562fe} 
+\Hypertarget{classNInARow_1_1VectorizedFeatureEvaluator_a04bc304abc09bf77efebd388cf57c5aa}\label{classNInARow_1_1VectorizedFeatureEvaluator_a04bc304abc09bf77efebd388cf57c5aa} 
 \index{NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}!query\_spaces@{query\_spaces}}
 \index{query\_spaces@{query\_spaces}!NInARow::VectorizedFeatureEvaluator$<$ Board $>$@{NInARow::VectorizedFeatureEvaluator$<$ Board $>$}}
 \doxysubsubsection{\texorpdfstring{query\_spaces()}{query\_spaces()}}
 {\footnotesize\ttfamily template$<$typename \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \\
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{NIn\+ARow\+::\+Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::query\+\_\+spaces (\begin{DoxyParamCaption}\item[{const \mbox{\hyperlink{classNInARow_1_1Board}{Board}} \&}]{b }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{NIn\+ARow\+::\+Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::query\+\_\+spaces (\begin{DoxyParamCaption}\item[{const std\+::vector$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \&}]{boards }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
 
-Given a board, count the number of spaces on the board which overlap with each of our registered features\textquotesingle{} spaces.
+Given a list of boards, count the number of spaces on each board which overlap with each of our registered features\textquotesingle{} spaces.
 
 
 \begin{DoxyParams}{Parameters}
-{\em b} & The board to evaluate.\\
+{\em boards} & The boards to evaluate.\\
 \hline
 \end{DoxyParams}
 \begin{DoxyReturn}{Returns}

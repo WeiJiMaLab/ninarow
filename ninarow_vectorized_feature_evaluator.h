@@ -44,6 +44,24 @@ class VectorizedBitsetCounter {
     return vector;
   }
 
+  /**
+   * Converts a list of bitsets to a matrix.
+   *
+   * @param bitsets The list of bitsets to convert.
+   *
+   * @return A matrix of size_t, where each row of the matrix corresponds to a
+   * bitset from the input.
+   */
+  static Eigen::Matrix<std::size_t, Eigen::Dynamic, N> bitsets_to_matrix(
+      const std::vector<std::bitset<N>> &bitsets) {
+    Eigen::Matrix<std::size_t, Eigen::Dynamic, N> matrix;
+    matrix.conservativeResize(bitsets.size(), Eigen::NoChange);
+    for (std::size_t i = 0; i < bitsets.size(); ++i) {
+      matrix.row(i) = bitset_to_vector(bitsets[i]);
+    }
+    return matrix;
+  }
+
  public:
   /**
    * Constructor.
@@ -63,20 +81,29 @@ class VectorizedBitsetCounter {
   }
 
   /**
-   * Queries all of the added bitsets against a new bitset. Returns a vector
-   * where each element of the vector corresponds to a count of the overlapping
-   * bits between each line of our registered bitsets and the given bitset.
+   * Queries all of the added bitsets against a list of new bitsets. Returns a
+   * vector of vectors, where each top-level vector corresponds to a single
+   * bitset passed in, and each element of the subvectors corresponds to a count
+   * of the overlapping bits between each line of our registered bitsets and the
+   * given bitset.
    *
-   * @param bitset The bitset to query against.
+   * @param bitsets The bitsets to query against.
    *
-   * @return A list of bit overlap counts, where each element corresponds to the
-   * bit overlap count for each registered bitset against the given bitset.
+   * @return A list of lists of bit overlap counts, where each element
+   * corresponds to the bit overlap count for each registered bitset against
+   * each given bitset.
    */
-  std::vector<std::size_t> query(std::bitset<N> bitset) const {
-    const Eigen::Vector<std::size_t, Eigen::Dynamic> count_results =
-        bitset_matrix * bitset_to_vector(bitset);
-    return {count_results.data(),
-            count_results.data() + count_results.rows() * count_results.cols()};
+  std::vector<std::vector<std::size_t>> query(
+      std::vector<std::bitset<N>> bitsets) const {
+    const Eigen::Matrix<std::size_t, Eigen::Dynamic, Eigen::Dynamic>
+        count_results = bitsets_to_matrix(bitsets) * bitset_matrix.transpose();
+    std::vector<std::vector<std::size_t>> output;
+    for (std::size_t i = 0; i < bitsets.size(); ++i) {
+      const auto start_address =
+          count_results.data() + i * count_results.cols();
+      output.push_back({start_address, start_address + count_results.cols()});
+    }
+    return output;
   }
 };
 
@@ -129,32 +156,62 @@ class VectorizedFeatureEvaluator {
   }
 
   /**
-   * Given a board and a player, count the number of pieces that the player
-   * has on the board which overlap with each of our registered features'
-   * pieces.
+   * Given a list of boards and a player, count the number of pieces that the
+   * player has on each board which overlap with each of our registered
+   * features' pieces.
    *
-   * @param b The board to evaluate.
+   * @param boards The boards to evaluate.
    * @param player The player whose pieces we are evaluating.
    *
    * @return A list of counts representing the number of pieces that the
    * player has on the board that overlap with each feature in order.
    */
-  std::vector<std::size_t> query_pieces(const Board &b, Player player) const {
-    return feature_pieces_bitsets.query(b.get_pieces(player).positions);
+  std::vector<std::vector<std::size_t>> query_pieces(
+      const std::vector<Board> &boards, Player player) const {
+    std::vector<std::bitset<Board::get_board_size()>> positions;
+    positions.reserve(boards.size());
+    for (const auto &board : boards) {
+      positions.push_back(board.get_pieces(player).positions);
+    }
+    return feature_pieces_bitsets.query(positions);
   }
 
   /**
-   * Given a board, count the number of spaces on the board which overlap
-   * with each of our registered features' spaces.
+   * Given a list of boards, count the number of spaces on each board which
+   * overlap with each of our registered features' spaces.
    *
-   * @param b The board to evaluate.
+   * @param boards The boards to evaluate.
    *
    * @return A list of counts representing the amount of overlap between
    * between the board's spaces and each feature's spaces.
    */
-  std::vector<std::size_t> query_spaces(const Board &b) const {
-    return feature_spaces_bitsets.query(b.get_spaces().positions);
+  std::vector<std::vector<std::size_t>> query_spaces(
+      const std::vector<Board> &boards) const {
+    std::vector<std::bitset<Board::get_board_size()>> spaces;
+    spaces.reserve(boards.size());
+    for (const auto &board : boards) {
+      spaces.push_back(board.get_spaces().positions);
+    }
+    return feature_spaces_bitsets.query(spaces);
   }
+
+  /**
+   * Helper functions for calling query_pieces/spaces on single board inputs
+   * easily.
+   *
+   * @{
+   */
+  std::vector<std::size_t> query_pieces(const Board &board,
+                                        Player player) const {
+    return query_pieces(std::vector<Board>{board}, player)[0];
+  }
+
+  std::vector<std::size_t> query_spaces(const Board &board) const {
+    return query_spaces(std::vector<Board>{board})[0];
+  }
+  /**
+   * @}
+   */
 };
 }  // namespace NInARow
 

@@ -156,9 +156,9 @@ def main():
     # Counting the number of active features of a given position
     triangle_heuristic = create_triangle_heuristic()
     print("Active feature counts per pack for black: {}".format(
-        count_features(triangle_heuristic, triangle_position, Player_Player1)))
+        count_features(triangle_heuristic, [triangle_position, position], Player_Player1)))
     print("Active feature counts per pack for white: {}".format(
-        count_features(triangle_heuristic, triangle_position, Player_Player2)))
+        count_features(triangle_heuristic, [triangle_position, position], Player_Player2)))
     search = ModifiedBestFirstSearch(
         heuristic, position)
 

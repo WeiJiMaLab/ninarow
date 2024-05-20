@@ -340,6 +340,13 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   }
 
   /**
+   * @return The feature evaluator for this heuristic.
+   */
+  VectorizedFeatureEvaluator<Board>& get_feature_evaluator() {
+    return feature_evaluator;
+  }
+
+  /**
    * Adds a new (empty) feature group to the heuristic.
    *
    * @param weight_act The weight given to the feature when it's being evaluated

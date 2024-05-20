@@ -40,7 +40,7 @@ TEST(NInARowHeuristicFeatureEvaluatorTest, TestHeuristicFeatureEvaluator) {
   }
 
   auto test_feature = [&features, &feature_evaluator](
-                          std::size_t i, Board &board, Player player,
+                          std::size_t i, const Board &board, Player player,
                           bool has_feature, bool can_complete, bool can_remove,
                           bool can_remove_opponent) {
     const auto player_pieces = feature_evaluator.query_pieces(board, player);

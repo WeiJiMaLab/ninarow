@@ -107,6 +107,8 @@ Public Member Functions</h2></td></tr>
 <tr class="separator:aa6d3ec58cb62241cdfe012a65fb0901c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aba09ae252471d3c9d2259511e2cae7ff"><td class="memItemLeft" align="right" valign="top">std::vector&lt; <a class="el" href="structNInARow_1_1HeuristicFeatureWithMetadata.html">HeuristicFeatureWithMetadata</a>&lt; <a class="el" href="classNInARow_1_1Board.html">Board</a> &gt; &gt; &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1Heuristic.html#aba09ae252471d3c9d2259511e2cae7ff">get_features_with_metadata</a> ()</td></tr>
 <tr class="separator:aba09ae252471d3c9d2259511e2cae7ff"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aacf3b986ca141e14c8fb525be3c54c06"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classNInARow_1_1VectorizedFeatureEvaluator.html">VectorizedFeatureEvaluator</a>&lt; <a class="el" href="classNInARow_1_1Board.html">Board</a> &gt; &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1Heuristic.html#aacf3b986ca141e14c8fb525be3c54c06">get_feature_evaluator</a> ()</td></tr>
+<tr class="separator:aacf3b986ca141e14c8fb525be3c54c06"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afcd41377fc007db321d03446fb4f46a2"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1Heuristic.html#afcd41377fc007db321d03446fb4f46a2">add_feature_group</a> (double weight_act, double weight_pass, double drop_rate)</td></tr>
 <tr class="separator:afcd41377fc007db321d03446fb4f46a2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:affdc2cf5bf277db9c56893775025d853"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1Heuristic.html#affdc2cf5bf277db9c56893775025d853">add_feature</a> (std::size_t i, const <a class="el" href="classNInARow_1_1HeuristicFeature.html">Feature</a> &amp;feature)</td></tr>
@@ -390,6 +392,34 @@ template&lt;typename <a class="el" href="classNInARow_1_1Board.html">Board</a> &
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>Either the best move in the given tree, or a random move if we lapse. </dd></dl>
+
+</div>
+</div>
+<a id="aacf3b986ca141e14c8fb525be3c54c06" name="aacf3b986ca141e14c8fb525be3c54c06"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aacf3b986ca141e14c8fb525be3c54c06">&#9670;&#160;</a></span>get_feature_evaluator()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename <a class="el" href="classNInARow_1_1Board.html">Board</a> &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classNInARow_1_1VectorizedFeatureEvaluator.html">VectorizedFeatureEvaluator</a>&lt; <a class="el" href="classNInARow_1_1Board.html">Board</a> &gt; &amp; <a class="el" href="classNInARow_1_1Heuristic.html">NInARow::Heuristic</a>&lt; <a class="el" href="classNInARow_1_1Board.html">Board</a> &gt;::get_feature_evaluator </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<dl class="section return"><dt>Returns</dt><dd>The feature evaluator for this heuristic. </dd></dl>
 
 </div>
 </div>

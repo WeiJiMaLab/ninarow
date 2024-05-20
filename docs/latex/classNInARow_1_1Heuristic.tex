@@ -28,6 +28,8 @@ std\+::vector$<$ \mbox{\hyperlink{structNInARow_1_1FeatureGroupWeight}{Feature\+
 \item 
 std\+::vector$<$ \mbox{\hyperlink{structNInARow_1_1HeuristicFeatureWithMetadata}{Heuristic\+Feature\+With\+Metadata}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ $>$ \& \mbox{\hyperlink{classNInARow_1_1Heuristic_aba09ae252471d3c9d2259511e2cae7ff}{get\+\_\+features\+\_\+with\+\_\+metadata}} ()
 \item 
+\mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \& \mbox{\hyperlink{classNInARow_1_1Heuristic_aacf3b986ca141e14c8fb525be3c54c06}{get\+\_\+feature\+\_\+evaluator}} ()
+\item 
 void \mbox{\hyperlink{classNInARow_1_1Heuristic_afcd41377fc007db321d03446fb4f46a2}{add\+\_\+feature\+\_\+group}} (double weight\+\_\+act, double weight\+\_\+pass, double drop\+\_\+rate)
 \item 
 void \mbox{\hyperlink{classNInARow_1_1Heuristic_affdc2cf5bf277db9c56893775025d853}{add\+\_\+feature}} (std\+::size\+\_\+t i, const \mbox{\hyperlink{classNInARow_1_1HeuristicFeature}{Feature}} \&feature)
@@ -165,6 +167,16 @@ A helper function for allowing the heuristic to apply its lapse rate to a given 
 \end{DoxyParams}
 \begin{DoxyReturn}{Returns}
 Either the best move in the given tree, or a random move if we lapse. 
+\end{DoxyReturn}
+\Hypertarget{classNInARow_1_1Heuristic_aacf3b986ca141e14c8fb525be3c54c06}\label{classNInARow_1_1Heuristic_aacf3b986ca141e14c8fb525be3c54c06} 
+\index{NInARow::Heuristic$<$ Board $>$@{NInARow::Heuristic$<$ Board $>$}!get\_feature\_evaluator@{get\_feature\_evaluator}}
+\index{get\_feature\_evaluator@{get\_feature\_evaluator}!NInARow::Heuristic$<$ Board $>$@{NInARow::Heuristic$<$ Board $>$}}
+\doxysubsubsection{\texorpdfstring{get\_feature\_evaluator()}{get\_feature\_evaluator()}}
+{\footnotesize\ttfamily template$<$typename \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \\
+\mbox{\hyperlink{classNInARow_1_1VectorizedFeatureEvaluator}{Vectorized\+Feature\+Evaluator}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$ \& \mbox{\hyperlink{classNInARow_1_1Heuristic}{NIn\+ARow\+::\+Heuristic}}$<$ \mbox{\hyperlink{classNInARow_1_1Board}{Board}} $>$\+::get\+\_\+feature\+\_\+evaluator (\begin{DoxyParamCaption}{ }\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}}
+
+\begin{DoxyReturn}{Returns}
+The feature evaluator for this heuristic. 
 \end{DoxyReturn}
 \Hypertarget{classNInARow_1_1Heuristic_aa6d3ec58cb62241cdfe012a65fb0901c}\label{classNInARow_1_1Heuristic_aa6d3ec58cb62241cdfe012a65fb0901c} 
 \index{NInARow::Heuristic$<$ Board $>$@{NInARow::Heuristic$<$ Board $>$}!get\_feature\_group\_weights@{get\_feature\_group\_weights}}
