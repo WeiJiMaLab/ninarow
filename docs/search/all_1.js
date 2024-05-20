@@ -1,6 +1,6 @@
 var searchData=
 [
-  ['abstractsearch_0',['AbstractSearch',['../classAbstractSearch.html',1,'AbstractSearch&lt; Heuristic &gt;'],['../classAbstractSearch.html#a4496c55eba254ec5ea81961da27c531d',1,'AbstractSearch::AbstractSearch()']]],
+  ['abstractsearch_0',['AbstractSearch',['../classAbstractSearch.html',1,'AbstractSearch&lt; Heuristic &gt;'],['../classAbstractSearch.html#a4496c55eba254ec5ea81961da27c531d',1,'AbstractSearch::AbstractSearch()'],['../classmodel__fitting_1_1fourbynine_1_1AbstractSearch.html',1,'model_fitting.fourbynine.AbstractSearch']]],
   ['add_1',['add',['../classNInARow_1_1Board.html#a56168083a79c5f970e1dea41b34b2738',1,'NInARow::Board']]],
   ['add_5ffeature_2',['add_feature',['../classNInARow_1_1Heuristic.html#affdc2cf5bf277db9c56893775025d853',1,'NInARow::Heuristic']]],
   ['add_5ffeature_5fgroup_3',['add_feature_group',['../classNInARow_1_1Heuristic.html#afcd41377fc007db321d03446fb4f46a2',1,'NInARow::Heuristic']]],

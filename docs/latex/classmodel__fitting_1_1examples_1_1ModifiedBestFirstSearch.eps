@@ -5,7 +5,7 @@
 %%For: 
 %Magnification: 1.00
 %%Orientation: Portrait
-%%BoundingBox: 0 0 500 138.408310
+%%BoundingBox: 0 0 500 332.225922
 %%Pages: 0
 %%BeginSetup
 %%EndSetup
@@ -19,12 +19,12 @@
 /marginwidth 10 def
 /distx 20 def
 /disty 40 def
-/boundaspect 3.612500 def  % aspect ratio of the BoundingBox (width/height)
+/boundaspect 1.505000 def  % aspect ratio of the BoundingBox (width/height)
 /boundx 500 def
 /boundy boundx boundaspect div def
 /xspacing 0 def
 /yspacing 0 def
-/rows 2 def
+/rows 5 def
 /cols 1 def
 /scalefactor 0 def
 /boxfont /Times-Roman findfont fontheight scalefont def
@@ -174,7 +174,10 @@
 boxfont setfont
 1 boundaspect scale
 (model_fitting.examples.ModifiedBestFirstSearch) cw
-(NInARowBestFirstSearch) cw
+(model_fitting.fourbynine.NInARowBestFirstSearch) cw
+(model_fitting.fourbynine.BestFirstSearch) cw
+(model_fitting.fourbynine.AbstractSearch) cw
+(object) cw
 /boxwidth boxwidth marginwidth 2 mul add def
 /xspacing boxwidth distx add def
 /yspacing boxheight disty add def
@@ -187,7 +190,10 @@ boundx scalefactor div boundy scalefactor div scale
 % ----- classes -----
 
  (model_fitting.examples.ModifiedBestFirstSearch) 0.000000 0.000000 box
- (NInARowBestFirstSearch) 0.000000 1.000000 box
+ (model_fitting.fourbynine.NInARowBestFirstSearch) 0.000000 1.000000 box
+ (model_fitting.fourbynine.BestFirstSearch) 0.000000 2.000000 box
+ (model_fitting.fourbynine.AbstractSearch) 0.000000 3.000000 box
+ (object) 0.000000 4.000000 box
 
 % ----- relations -----
 
@@ -195,3 +201,15 @@ solid
 0 0.000000 0.000000 out
 solid
 1 0.000000 1.000000 in
+solid
+0 0.000000 1.000000 out
+solid
+1 0.000000 2.000000 in
+solid
+0 0.000000 2.000000 out
+solid
+1 0.000000 3.000000 in
+solid
+0 0.000000 3.000000 out
+solid
+1 0.000000 4.000000 in

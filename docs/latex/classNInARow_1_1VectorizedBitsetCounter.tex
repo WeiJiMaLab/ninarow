@@ -11,7 +11,7 @@
 \item 
 void \mbox{\hyperlink{classNInARow_1_1VectorizedBitsetCounter_a115251e40b50e630e7d6b321e1e3a6aa}{register\+\_\+bitset}} (const std\+::bitset$<$ N $>$ \&bitset)
 \item 
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedBitsetCounter_a0b199bdc319b2180877b38a58ff93ad9}{query}} (std\+::bitset$<$ N $>$ bitset) const
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedBitsetCounter_a1f020b03eb3d6394426e6731600c29f2}{query}} (std\+::vector$<$ std\+::bitset$<$ N $>$ $>$ bitsets) const
 \end{DoxyCompactItemize}
 
 
@@ -38,22 +38,22 @@ Counts the number of overlapping bits between a given bitset and a vector of kno
 Constructor. 
 
 \doxysubsection{Member Function Documentation}
-\Hypertarget{classNInARow_1_1VectorizedBitsetCounter_a0b199bdc319b2180877b38a58ff93ad9}\label{classNInARow_1_1VectorizedBitsetCounter_a0b199bdc319b2180877b38a58ff93ad9} 
+\Hypertarget{classNInARow_1_1VectorizedBitsetCounter_a1f020b03eb3d6394426e6731600c29f2}\label{classNInARow_1_1VectorizedBitsetCounter_a1f020b03eb3d6394426e6731600c29f2} 
 \index{NInARow::VectorizedBitsetCounter$<$ N $>$@{NInARow::VectorizedBitsetCounter$<$ N $>$}!query@{query}}
 \index{query@{query}!NInARow::VectorizedBitsetCounter$<$ N $>$@{NInARow::VectorizedBitsetCounter$<$ N $>$}}
 \doxysubsubsection{\texorpdfstring{query()}{query()}}
 {\footnotesize\ttfamily template$<$std\+::size\+\_\+t N$>$ \\
-std\+::vector$<$ std\+::size\+\_\+t $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedBitsetCounter}{NIn\+ARow\+::\+Vectorized\+Bitset\+Counter}}$<$ N $>$\+::query (\begin{DoxyParamCaption}\item[{std\+::bitset$<$ N $>$}]{bitset }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
+std\+::vector$<$ std\+::vector$<$ std\+::size\+\_\+t $>$ $>$ \mbox{\hyperlink{classNInARow_1_1VectorizedBitsetCounter}{NIn\+ARow\+::\+Vectorized\+Bitset\+Counter}}$<$ N $>$\+::query (\begin{DoxyParamCaption}\item[{std\+::vector$<$ std\+::bitset$<$ N $>$ $>$}]{bitsets }\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}}
 
-Queries all of the added bitsets against a new bitset. Returns a vector where each element of the vector corresponds to a count of the overlapping bits between each line of our registered bitsets and the given bitset.
+Queries all of the added bitsets against a list of new bitsets. Returns a vector of vectors, where each top-\/level vector corresponds to a single bitset passed in, and each element of the subvectors corresponds to a count of the overlapping bits between each line of our registered bitsets and the given bitset.
 
 
 \begin{DoxyParams}{Parameters}
-{\em bitset} & The bitset to query against.\\
+{\em bitsets} & The bitsets to query against.\\
 \hline
 \end{DoxyParams}
 \begin{DoxyReturn}{Returns}
-A list of bit overlap counts, where each element corresponds to the bit overlap count for each registered bitset against the given bitset. 
+A list of lists of bit overlap counts, where each element corresponds to the bit overlap count for each registered bitset against each given bitset. 
 \end{DoxyReturn}
 \Hypertarget{classNInARow_1_1VectorizedBitsetCounter_a115251e40b50e630e7d6b321e1e3a6aa}\label{classNInARow_1_1VectorizedBitsetCounter_a115251e40b50e630e7d6b321e1e3a6aa} 
 \index{NInARow::VectorizedBitsetCounter$<$ N $>$@{NInARow::VectorizedBitsetCounter$<$ N $>$}!register\_bitset@{register\_bitset}}

@@ -88,8 +88,8 @@ Public Member Functions</h2></td></tr>
 <tr class="separator:abe9af7e3f665f02ebe9f420cdfffcf78"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a115251e40b50e630e7d6b321e1e3a6aa"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1VectorizedBitsetCounter.html#a115251e40b50e630e7d6b321e1e3a6aa">register_bitset</a> (const std::bitset&lt; N &gt; &amp;bitset)</td></tr>
 <tr class="separator:a115251e40b50e630e7d6b321e1e3a6aa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0b199bdc319b2180877b38a58ff93ad9"><td class="memItemLeft" align="right" valign="top">std::vector&lt; std::size_t &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1VectorizedBitsetCounter.html#a0b199bdc319b2180877b38a58ff93ad9">query</a> (std::bitset&lt; N &gt; bitset) const</td></tr>
-<tr class="separator:a0b199bdc319b2180877b38a58ff93ad9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1f020b03eb3d6394426e6731600c29f2"><td class="memItemLeft" align="right" valign="top">std::vector&lt; std::vector&lt; std::size_t &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classNInARow_1_1VectorizedBitsetCounter.html#a1f020b03eb3d6394426e6731600c29f2">query</a> (std::vector&lt; std::bitset&lt; N &gt; &gt; bitsets) const</td></tr>
+<tr class="separator:a1f020b03eb3d6394426e6731600c29f2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><div class="compoundTemplParams">template&lt;std::size_t N&gt;<br />
@@ -130,8 +130,8 @@ template&lt;std::size_t N&gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a0b199bdc319b2180877b38a58ff93ad9" name="a0b199bdc319b2180877b38a58ff93ad9"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0b199bdc319b2180877b38a58ff93ad9">&#9670;&#160;</a></span>query()</h2>
+<a id="a1f020b03eb3d6394426e6731600c29f2" name="a1f020b03eb3d6394426e6731600c29f2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1f020b03eb3d6394426e6731600c29f2">&#9670;&#160;</a></span>query()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -142,10 +142,10 @@ template&lt;std::size_t N&gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">std::vector&lt; std::size_t &gt; <a class="el" href="classNInARow_1_1VectorizedBitsetCounter.html">NInARow::VectorizedBitsetCounter</a>&lt; N &gt;::query </td>
+          <td class="memname">std::vector&lt; std::vector&lt; std::size_t &gt; &gt; <a class="el" href="classNInARow_1_1VectorizedBitsetCounter.html">NInARow::VectorizedBitsetCounter</a>&lt; N &gt;::query </td>
           <td>(</td>
-          <td class="paramtype">std::bitset&lt; N &gt;&#160;</td>
-          <td class="paramname"><em>bitset</em></td><td>)</td>
+          <td class="paramtype">std::vector&lt; std::bitset&lt; N &gt; &gt;&#160;</td>
+          <td class="paramname"><em>bitsets</em></td><td>)</td>
           <td> const</td>
         </tr>
       </table>
@@ -155,14 +155,14 @@ template&lt;std::size_t N&gt; </div>
   </tr>
 </table>
 </div><div class="memdoc">
-<p>Queries all of the added bitsets against a new bitset. Returns a vector where each element of the vector corresponds to a count of the overlapping bits between each line of our registered bitsets and the given bitset.</p>
+<p>Queries all of the added bitsets against a list of new bitsets. Returns a vector of vectors, where each top-level vector corresponds to a single bitset passed in, and each element of the subvectors corresponds to a count of the overlapping bits between each line of our registered bitsets and the given bitset.</p>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">bitset</td><td>The bitset to query against.</td></tr>
+    <tr><td class="paramname">bitsets</td><td>The bitsets to query against.</td></tr>
   </table>
   </dd>
 </dl>
-<dl class="section return"><dt>Returns</dt><dd>A list of bit overlap counts, where each element corresponds to the bit overlap count for each registered bitset against the given bitset. </dd></dl>
+<dl class="section return"><dt>Returns</dt><dd>A list of lists of bit overlap counts, where each element corresponds to the bit overlap count for each registered bitset against each given bitset. </dd></dl>
 
 </div>
 </div>
