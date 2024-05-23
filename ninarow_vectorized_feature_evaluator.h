@@ -21,11 +21,11 @@ template <std::size_t N>
 class VectorizedBitsetCounter {
  private:
   /**
-   * Represents the known vector of bitsets - an M dimensional vector of length
-   * N, where M is the number of bitsets that have been registered for
-   * evaluation.
+   * Represents the known matrix of bitsets - an matrix of size N * M,
+   * where M is the number of bitsets that have been registered for
+   * evaluation. Each bitset is stored as a column in the matrix.
    */
-  Eigen::Matrix<std::size_t, Eigen::Dynamic, N> bitset_matrix;
+  Eigen::Matrix<std::size_t, N, Eigen::Dynamic> bitset_matrix;
 
   /**
    * Converts a bitset to a one-dimensional vector of size_ts
@@ -54,7 +54,7 @@ class VectorizedBitsetCounter {
    */
   static Eigen::Matrix<std::size_t, Eigen::Dynamic, N> bitsets_to_matrix(
       const std::vector<std::bitset<N>> &bitsets) {
-    Eigen::Matrix<std::size_t, Eigen::Dynamic, N> matrix;
+    Eigen::Matrix<std::size_t, Eigen::Dynamic, N> matrix(0, N);
     matrix.conservativeResize(bitsets.size(), Eigen::NoChange);
     for (std::size_t i = 0; i < bitsets.size(); ++i) {
       matrix.row(i) = bitset_to_vector(bitsets[i]);
@@ -66,7 +66,7 @@ class VectorizedBitsetCounter {
   /**
    * Constructor.
    */
-  VectorizedBitsetCounter() : bitset_matrix(0, N) {}
+  VectorizedBitsetCounter() : bitset_matrix(N, 0) {}
 
   /**
    * Adds a bitset into our known pool. After this function is called, each
@@ -76,8 +76,8 @@ class VectorizedBitsetCounter {
    * @param bitset The bitset to add.
    */
   void register_bitset(const std::bitset<N> &bitset) {
-    bitset_matrix.conservativeResize(bitset_matrix.rows() + 1, Eigen::NoChange);
-    bitset_matrix.row(bitset_matrix.rows() - 1) = bitset_to_vector(bitset);
+    bitset_matrix.conservativeResize(Eigen::NoChange, bitset_matrix.cols() + 1);
+    bitset_matrix.col(bitset_matrix.cols() - 1) = bitset_to_vector(bitset);
   }
 
   /**
@@ -95,13 +95,14 @@ class VectorizedBitsetCounter {
    */
   std::vector<std::vector<std::size_t>> query(
       std::vector<std::bitset<N>> bitsets) const {
-    const Eigen::Matrix<std::size_t, Eigen::Dynamic, Eigen::Dynamic>
-        count_results = bitsets_to_matrix(bitsets) * bitset_matrix.transpose();
+    const auto m = bitsets_to_matrix(bitsets);
+    const Eigen::Matrix<std::size_t, Eigen::Dynamic, Eigen::Dynamic,
+                        Eigen::RowMajor>
+        count_results = m * bitset_matrix;
     std::vector<std::vector<std::size_t>> output;
     for (std::size_t i = 0; i < bitsets.size(); ++i) {
-      const auto start_address =
-          count_results.data() + i * count_results.cols();
-      output.push_back({start_address, start_address + count_results.cols()});
+      const auto row = count_results.row(i);
+      output.emplace_back(row.data(), row.data() + row.size());
     }
     return output;
   }
