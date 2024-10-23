@@ -14,9 +14,17 @@
 #include "player.h"
 #include "searches.h"
 
-typedef long unsigned int size_t;
+#if defined(SWIGWORDSIZE64)
+typedef unsigned long int size_t;
+#else
+typedef unsigned long long int size_t;
+#endif
 %}
-typedef long unsigned int size_t;
+#if defined(SWIGWORDSIZE64)
+typedef unsigned long int size_t;
+#else
+typedef unsigned long long int size_t;
+#endif
 
 %include "stdint.i"
 %include "std_string.i"

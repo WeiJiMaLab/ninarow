@@ -33,7 +33,6 @@ FetchContent_Declare(
     )
 FetchContent_MakeAvailable(Eigen)
 
-find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(SWIG REQUIRED)
 find_package(PythonLibs REQUIRED)
 
@@ -68,7 +67,11 @@ gtest_discover_tests(tests)
 SET_SOURCE_FILES_PROPERTIES(fourbynine.i PROPERTIES CPLUSPLUS ON)
 SWIG_ADD_LIBRARY(swig_fourbynine TYPE SHARED LANGUAGE python OUTPUT_DIR "../model_fitting" OUTFILE_DIR "./" SOURCES fourbynine.i)
 set_property(TARGET swig_fourbynine PROPERTY SWIG_USE_TARGET_INCLUDE_DIRECTORIES TRUE)
-set_target_properties(swig_fourbynine PROPERTIES SUFFIX ".so")
+
+IF (NOT WIN32)
+  set_target_properties(swig_fourbynine PROPERTIES SUFFIX ".so")
+ENDIF()
+
 target_include_directories(swig_fourbynine PUBLIC "./")
 target_link_libraries(swig_fourbynine
   ${PYTHON_LIBRARIES}

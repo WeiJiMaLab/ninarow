@@ -250,7 +250,7 @@ class ModelFitter:
         N = len(move_tasks)
 
         cutoff = N * self.model.cutoff
-        shared_tasks = UltraDict(move_tasks, shared_lock=True)
+        shared_tasks = UltraDict(move_tasks, full_dump_size=N*1024*1024, shared_lock=True)
 
         global Lexpt
         Lexpt.value = N * self.model.expt_factor
