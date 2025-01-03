@@ -111,15 +111,15 @@ class DefaultModel:
         self.expt_factor = 1.0
         self.cutoff = 3.5
 
-        self.x0 = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
+        self.initial_params = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
                             1, 0.4, 3.5, 5], dtype=np.float64)
-        self.ub = np.array(
+        self.upperbound = np.array(
             [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float64)
-        self.lb = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
+        self.lowerbound = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
                             10, -10, -10, -10], dtype=np.float64)
-        self.pub = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
+        self.plausible_upperbound = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
                             5, 5, 5, 5], dtype=np.float64)
-        self.plb = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
+        self.plausible_lowerbound = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
                              5, -5, -5, -5], dtype=np.float64)
         self.c = 50
 
@@ -160,7 +160,7 @@ class DefaultModel:
         Returns:
             A list of L-values corresponding to each of the given moves.
         """
-        return fitter.estimate_l_values(moves, self.x0, 10)
+        return fitter.estimate_l_values(moves, self.initial_params, 10)
 
 
 class ModelFitter:
@@ -358,8 +358,8 @@ class ModelFitter:
         badsopts['uncertainty_handling'] = True
         badsopts['noise_final_samples'] = 0
         badsopts['max_fun_evals'] = 2000
-        bads = BADS(opt_fun, self.model.x0, self.model.lb, self.model.ub,
-                    self.model.plb, self.model.pub, options=badsopts)
+        bads = BADS(opt_fun, self.model.initial_params, self.model.lowerbound, self.model.upperbound,
+                    self.model.plausible_lowerbound, self.model.plausible_upperbound, options=badsopts)
         out_params = bads.optimize()['x']
         print("Final estimated params: {}".format(out_params))
         print("Beginning model fit post-processing: log-likelihood estimation")
