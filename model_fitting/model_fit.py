@@ -22,7 +22,6 @@ class SuccessFrequencyTracker:
     Tracks the number of times the heuristic has evaluated a given position to the expected evaluation. Used for
     fitting the heuristic to a given dataset.
     """
-
     def __init__(
             self, expt_factor):
         """
@@ -85,13 +84,13 @@ def generate_splits(moves, split_count):
     if (split_count != 1):
         random.shuffle(indices)
     count = 0
-    groups = []
+    folds = []
     for i in range(split_count):
-        groups.append([])
+        folds.append([])
     for i in range(len(moves)):
-        groups[i % split_count].append(moves[indices[i]])
-        groups[i % split_count][-1].group = (i % split_count) + 1
-    return groups
+        folds[i % split_count].append(moves[indices[i]])
+        folds[i % split_count][-1].group = (i % split_count) + 1
+    return folds
 
 
 class DefaultModel:
@@ -112,15 +111,15 @@ class DefaultModel:
         self.expt_factor = 1.0
         self.cutoff = 3.5
 
-        self.x0 = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
+        self.initial_params = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
                             1, 0.4, 3.5, 5], dtype=np.float64)
-        self.ub = np.array(
+        self.upperbound = np.array(
             [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float64)
-        self.lb = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
+        self.lowerbound = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
                             10, -10, -10, -10], dtype=np.float64)
-        self.pub = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
+        self.plausible_upperbound = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
                             5, 5, 5, 5], dtype=np.float64)
-        self.plb = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
+        self.plausible_lowerbound = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
                              5, -5, -5, -5], dtype=np.float64)
         self.c = 50
 
@@ -161,7 +160,7 @@ class DefaultModel:
         Returns:
             A list of L-values corresponding to each of the given moves.
         """
-        return fitter.estimate_l_values(moves, self.x0, 10)
+        return fitter.estimate_l_values(moves, self.initial_params, 10)
 
 
 class ModelFitter:
@@ -170,26 +169,29 @@ class ModelFitter:
     fit for a given dataset.
     """
 
-    def __init__(self, model, args):
+    def __init__(self, model, random_sample=None, verbose=False, threads=16):
         """
         Constructor.
 
         Args:
             model: The model this fitter should use. Produces heuristics/searches, and supplies
                    parameters for fitting.
-            args: The argparse arguments that should be passed into this fitter.
+            random_sample: If specified, instead of testing each position on a BADS function evaluation, 
+                           instead randomly sample up to N positions without replacement.
+            verbose: If specified, print extra debugging info.
+            threads: The number of threads to use when fitting.
         """
         self.model = model
-        if args.random_sample:
+        if random_sample:
             self.random_sample = True
-            self.sample_count = args.random_sample[0]
+            self.sample_count = random_sample
             if self.sample_count <= 1:
                 raise Exception("Sample count must be greater than one!")
         else:
             self.random_sample = False
             self.sample_count = 0
-        self.verbose = args.verbose
-        self.num_workers = args.threads
+        self.verbose = verbose
+        self.num_workers = threads
 
     def estimate_log_lik_ibs(
             self,
@@ -324,7 +326,8 @@ class ModelFitter:
 
         @return The set of parameters that best correspond to the given moves, as well as their corresponding L-values.
         """
-        print("Beginning model fit pre-processing: log-likelihood estimation")
+        print("[Preprocessing] Initial log-likelihood estimation")
+
         average_l_values = self.model.estimate_initial_l_value_guess(
             self, moves)
         counts = self.generate_attempt_counts(
@@ -337,71 +340,90 @@ class ModelFitter:
 
         if self.random_sample:
             clamped_sample_count = min(self.sample_count, len(move_tasks))
+
+            # If we're sampling, we need to make sure we're not trying to sample more than we have.
             if clamped_sample_count != self.sample_count:
-                print("Requested sample count ({}) is larger than the dataset size ({})! Clamping sample count and using entire set...".format(
-                    self.sample_count, len(move_tasks)))
+                print(f"Warning: Sample count ({self.sample_count}) > dataset size ({len(move_tasks)})! Using full dataset...")
 
         def opt_fun(x):
-            if self.verbose:
-                print("Probing function at theta = {}".format(x))
-                print("Current iteration: {}".format(
-                    opt_fun.current_iteration_count))
-                opt_fun.current_iteration_count += 1
+            '''
+            The objective function for the BADS optimization process. Given a set of parameters, evaluate the log-likelihood
+            '''
             if self.random_sample:
                 subsampled_keys = random.sample(
                     sorted(move_tasks), clamped_sample_count)
                 subsampled_tasks = {k: move_tasks[k] for k in subsampled_keys}
             else:
                 subsampled_tasks = move_tasks
-            return sum(list(self.compute_loglik(subsampled_tasks, x).values()))
+
+            log_likelihood = sum(list(self.compute_loglik(subsampled_tasks, x).values()))
+
+            if self.verbose:
+                print(f"[{opt_fun.current_iteration_count}] Params: {[np.round(x_, 3) for x_ in x]} NLL: {np.round(log_likelihood, 4)}")
+                opt_fun.current_iteration_count += 1
+
+            return log_likelihood
 
         opt_fun.current_iteration_count = 0
         badsopts = {}
         badsopts['uncertainty_handling'] = True
         badsopts['noise_final_samples'] = 0
         badsopts['max_fun_evals'] = 2000
-        bads = BADS(opt_fun, self.model.x0, self.model.lb, self.model.ub,
-                    self.model.plb, self.model.pub, options=badsopts)
+        bads = BADS(opt_fun, self.model.initial_params, self.model.lowerbound, self.model.upperbound,
+                    self.model.plausible_lowerbound, self.model.plausible_upperbound, options=badsopts)
         out_params = bads.optimize()['x']
-        print("Final estimated params: {}".format(out_params))
-        print("Beginning model fit post-processing: log-likelihood estimation")
+
+        print("[Fitted Parameters]: {}".format(out_params))
+
+        print("[Postprocessing] Final log-likelihood estimation")
         final_l_values = self.estimate_l_values(moves, out_params, 10)
         return out_params, final_l_values
 
-    def cross_validate(self, groups, i):
+    def cross_validate(self, folds, i):
         """
-        Given a set of pre-split groups, cross validate the i-th group against the rest, i.e.,
-        fit against all of the groups but the i-th and evaluate the resultant fit on the i-th group.
+        Given a set of pre-split folds, cross validate the i-th group against the rest, i.e.,
+        fit against all of the folds but the i-th and evaluate the resultant fit on the i-th group.
 
         Args:
-            groups: A pre-split list of lists of moves corresponding to different validation groups.
+            folds: A pre-split list of lists of moves corresponding to different validation folds.
             i: The group that should be held-out of the fitting process and tested against.
 
         Returns:
-            The best-fit parameters for all of the groups but the ith, as well as the log-likelihood
+            The best-fit parameters for all of the folds but the ith, as well as the log-likelihood
             of the moves from both the training (non-i) and test (i) sets.
         """
         print("Cross validating split {} against the other {} splits".format(
-            i + 1, len(groups) - 1))
-        test = groups[i]
+            i + 1, len(folds) - 1))
+        test = folds[i]
         train = []
-        if len(groups) == 1:
-            train.extend(groups[0])
+
+        # if there's only one fold, train on all of it
+        if len(folds) == 1:
+            train.extend(folds[0])
+            
+        # otherwise, train on all folds but the i-th
         else:
-            for j in range(len(groups)):
-                if i != j:
-                    train.extend(groups[j])
+            for j in range(len(folds)):
+                if i != j: train.extend(folds[j])
+
         params, loglik_train = self.fit_model(train)
         test_tasks = {}
+
+
         for move in test:
             test_tasks[move] = SuccessFrequencyTracker(self.model.expt_factor)
+
         loglik_test = list(self.compute_loglik(test_tasks, params).values())
         return params, loglik_train, loglik_test
-
 
 def initialize_thread(shared_value):
     global Lexpt
     Lexpt = shared_value
+
+def initialize_thread_pool(shared_value, threads):
+    global Lexpt, pool
+    Lexpt = shared_value
+    pool = Pool(threads, initializer=initialize_thread, initargs=(Lexpt,))
 
 
 def main():
@@ -439,7 +461,7 @@ def main():
     parser.add_argument(
         "-i",
         "--input_dir",
-        help="The directory containing the pre-split groups to parse and cross-validate, along with the expected number of splits to be parsed. These splits should be named [1-n].csv",
+        help="The directory containing the pre-split folds to parse and cross-validate, along with the expected number of splits to be parsed. These splits should be named [1-n].csv",
         type=str,
         nargs=2,
         metavar=(
@@ -486,7 +508,7 @@ def main():
     if args.participant_file and args.input_dir:
         raise Exception("Can't specify both -f and -i!")
 
-    groups = []
+    folds = []
 
     # If the participant file is specified, generate splits.
     if args.participant_file:
@@ -500,7 +522,7 @@ def main():
 
         # parse the participant file and generate splits
         moves = parse_participant_file(args.participant_file[0])
-        groups = generate_splits(moves, num_splits)
+        folds = generate_splits(moves, num_splits)
 
     # If the input directory is specified, read in the splits.
     elif args.input_dir:
@@ -514,7 +536,7 @@ def main():
         for input_path in input_files:
             print("Ingesting split {}".format(input_path))
             moves = parse_participant_file(input_path)
-            groups.append(moves)
+            folds.append(moves)
     else:
         raise Exception("Either -f or -i must be specified!")
 
@@ -524,11 +546,11 @@ def main():
 
     # Only output splits if we generated new ones to output.
     if args.participant_file:
-        for i in range(len(groups)):
+        for i in range(len(folds)):
             new_split_path = output_path / (str(i + 1) + ".csv")
             print("Writing split {}".format(new_split_path))
             with (new_split_path).open('w') as f:
-                for move in groups[i]:
+                for move in folds[i]:
                     f.write(str(move) + "\n")
 
     if args.splits_only:
@@ -538,14 +560,14 @@ def main():
     global pool, Lexpt
     Lexpt = Value('d', 0)
     pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
-    model_fitter = ModelFitter(DefaultModel(), args)
-    start, end = 0, len(groups)
+    model_fitter = ModelFitter(DefaultModel(), random_sample=bool(args.random_sample), verbose=bool(args.verbose), threads=args.threads)
+    start, end = 0, len(folds)
     if (args.cluster_mode):
         start = args.cluster_mode[0] - 1
         end = start + 1
     for i in range(start, end):
         params, loglik_train, loglik_test = model_fitter.cross_validate(
-            groups, i)
+            folds, i)
         with (output_path / ("params" + str(i + 1) + ".csv")).open('w') as f:
             f.write(','.join(str(x) for x in params))
         with (output_path / ("lltrain" + str(i + 1) + ".csv")).open('w') as f:
