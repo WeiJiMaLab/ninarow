@@ -7,60 +7,17 @@ This repository was written for compatibility with Python 3 by Tyler Seip and is
 # Dependencies
 
 This repository requires Python 3.
-
-**For Local Linux/Mac**, To install the build system (cmake) and SWIG, use the following commands:
-
-```sh
-sudo apt-get install cmake
-sudo apt-get install swig
-```
-
-**For Cluster**, if you are using a Singularity instance, do not use `sudo`. Simply activate your Singularity instance and run
+To build and stall the required packages, run the bash script at `build.sh`.
 
 ```sh
-apt-get install cmake
-apt-get install swig
+./build.sh
 ```
-
-**For Windows**, install cmake using the Windows installer, and download and unzip SWIG to a directory. Add the following environment variables for all users:
-
-- `SWIG_DIR` : `<path to unzipped SWIG directory>`
-- `SWIG_EXECUTABLE` : `<path to swig.exe in unzipped SWIG directory>`
-
-Finally, add the SWIG directory (`SWIG_DIR` above) to your PATH system variable.
-
-# Build Instructions
-
-From a fresh checkout, create a build directory:
-
-```sh
-mkdir build
-```
-
-Then from the build directory:
-
-```sh
-cd build
-cmake ..
-cmake --build .
-```
-
-**For Windows**, if you do not have the debug Python libraries installed, specify the Release build at build-time:
-
-```sh
-cmake --build . --config Release
-```
-
-To run tests, execute `./tests` in the build output.
-
-To install the required Python packages, from the `model_fitting` directory run:
-
-```sh
-pip install -r requirements.txt
-```
+The script will build a folder called `build` which contains the necessary SWIG modules.
+It will also automatically prompt you to run tests and install the needed Python packages. 
+If anything fails, you can always install and test manually following the instructions in 
+`legacy/README.md`.
 
 To fit a model, from the `model_fitting` directory run:
-
 ```sh
 python model_fit.py <path_to_game_csv>
 ```
