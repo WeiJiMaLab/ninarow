@@ -14,16 +14,19 @@
 #include "player.h"
 #include "searches.h"
 
+// incorrect logic in old commit causes
+// the size_t definition to FAIL for compiling.
+// size_t should always be unsigned long int.
 #if defined(SWIGWORDSIZE64)
 typedef unsigned long int size_t;
 #else
-typedef unsigned long long int size_t;
+typedef unsigned long int size_t;
 #endif
 %}
 #if defined(SWIGWORDSIZE64)
 typedef unsigned long int size_t;
 #else
-typedef unsigned long long int size_t;
+typedef unsigned long int size_t;
 #endif
 
 %include "stdint.i"
