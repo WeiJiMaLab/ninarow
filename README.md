@@ -1,6 +1,6 @@
 # Authorial Credit
 
-This is a rewrite of Bas van Opheusden's [Four-in-a-row implementation](https://github.com/basvanopheusden/fourinarow). Please consider him the author of this code for citation purposes. 
+This is a rewrite of Bas van Opheusden's [Four-in-a-row implementation](https://github.com/basvanopheusden/fourinarow). Please consider him the author of this code for citation purposes.
 
 This repository was written for compatibility with Python 3 by Tyler Seip and is actively maintained by the members of Wei Ji Ma Lab.
 
@@ -16,6 +16,7 @@ sudo apt-get install swig
 ```
 
 **For Cluster**, if you are using a Singularity instance, do not use `sudo`. Simply activate your Singularity instance and run
+
 ```sh
 apt-get install cmake
 apt-get install swig
