@@ -5,3 +5,4 @@ model_fitting/fourbynine.py
 .project
 .cproject
 data/*
+.venv/*

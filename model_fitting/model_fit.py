@@ -376,8 +376,7 @@ class ModelFitter:
         opt_fun.current_iteration_count = 0
 
         # run PyBADS to optimize the initial parameter guesses
-        bads = BADS(opt_fun, self.model.initial_params, self.model.lowerbound, self.model.upperbound,
-                    self.model.plausible_lowerbound, self.model.plausible_upperbound, options=bads_options)
+        bads = BADS(opt_fun, self.model.initial_params, self.model.lowerbound, self.model.upperbound, self.model.plausible_lowerbound, self.model.plausible_upperbound, options=bads_options)
         
         out_params = bads.optimize()['x']
 

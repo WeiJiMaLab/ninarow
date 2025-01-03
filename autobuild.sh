@@ -1,12 +1,15 @@
 #!/bin/bash
-echo "Are you running on (1) Linux/Mac, (2) Cluster, or (3) Windows?"
+printf "\e[32mBeginning build of n-in-a-row package\e[0m\n"
+
+echo "Are you running on (1) Mac, (2) Cluster, or (3) Windows?"
 read -p "Enter the number corresponding to your environment: " env
+
 
 case $env in
     1)
-        echo "Installing dependencies for Linux/Mac..."
-        sudo apt-get install cmake
-        sudo apt-get install swig
+        echo "Installing dependencies for Mac..."
+        brew install cmake
+        brew install swig
         ;;
     2)
         echo "Installing dependencies for Cluster..."
@@ -51,7 +54,11 @@ read -p "Do you want to install the required Python packages for model fitting? 
 if [ "$install_packages" == "y" ]; then
     echo "Installing required Python packages..."
     cd ../model_fitting
-    pip install -r requirements.txt
+    if [ "$env" -eq 1 ]; then
+        pip3 install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+    else
+        pip install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+    fi
     cd ../build
 else
     echo "Skipping Python package installation."
@@ -59,7 +66,7 @@ fi
 
 echo -e "\n\n\n\n\n"
 echo "----------------------------------------"
-echo -e "\e[32mHooray! Successfully Finished Installation of N-in-a-row Package!\e[0m"
+printf "\e[32mHooray! Build Complete.\e[0m\n"
 
 echo "To fit a model, from the model_fitting directory run:"
 echo "python model_fit.py <path_to_game_csv>"
