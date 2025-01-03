@@ -250,8 +250,7 @@ class ModelFitter:
         N = len(move_tasks)
 
         cutoff = N * self.model.cutoff
-        shared_tasks = UltraDict(
-            move_tasks, full_dump_size=N*1024*1024, shared_lock=True)
+        shared_tasks = UltraDict(move_tasks, full_dump_size=N*1024*1024, shared_lock=True)
 
         global Lexpt
         Lexpt.value = N * self.model.expt_factor
@@ -404,16 +403,6 @@ def initialize_thread(shared_value):
 
 
 def main():
-    # INPUT FILE FORMAT should be: 
-    # black_pieces (binary), 
-    # white_pieces (binary), 
-    # player_color (Black/White), 
-    # move (binary), 
-    # response time (not used in fitting), 
-    # [group_id] (optional), 
-    # participant_id
-    # for more info, see parsers.py
-
     random.seed()
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, epilog="""Example usages:
 Ingest a file named input.csv and output to a folder named output/: model_fit.py -f input.csv -o output/
@@ -481,8 +470,6 @@ Read in splits from the above command, and only process/cross validate a single 
         raise Exception("Can't specify both -f and -i!")
 
     groups = []
-
-    # If the participant file is specified, generate splits.
     if args.participant_file:
         num_splits = 1
         if (len(args.participant_file) == 2):
@@ -491,15 +478,9 @@ Read in splits from the above command, and only process/cross validate a single 
             raise Exception("-f only takes up to 2 arguments!")
         if (args.cluster_mode):
             raise Exception("-c cannot be used with -f!")
-
-        # parse the participant file and generate splits
         moves = parse_participant_file(args.participant_file[0])
         groups = generate_splits(moves, num_splits)
-
-    # If the input directory is specified, read in the splits.
     elif args.input_dir:
-        # directory should be in the form
-        # participant/[1-n].csv
         input_path = Path(args.input_dir[0])
         num_splits = int(args.input_dir[1])
         input_files = []
