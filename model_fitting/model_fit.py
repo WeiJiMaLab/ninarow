@@ -14,6 +14,7 @@ from pybads import BADS
 from pathlib import Path
 from tqdm import tqdm
 from parsers import *
+import pandas as pd
 
 
 class SuccessFrequencyTracker:
@@ -416,11 +417,16 @@ def main():
 
     random.seed()
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, epilog="""Example usages:
-Ingest a file named input.csv and output to a folder named output/: model_fit.py -f input.csv -o output/
-Ingest a file, generate 5 splits, and cross validate: model_fit.py -f input.csv 5 -o output/
-Generate 5 splits from a file and terminate: model_fit.py -f input.csv 5 -s -o output/
-Read in splits from the above command and cross validate: model_fit.py -i output/ 5 -o output/
-Read in splits from the above command, and only process/cross validate a single split (split 2, in this case) against the rest: model_fit.py -i output/ 5 -o output/ -c 2""")
+    - Process a file named input.csv and save results to a folder named output/: 
+      model_fit.py -f input.csv -o output/
+    - Process a file, create 5 splits, and perform cross-validation: 
+      model_fit.py -f input.csv 5 -o output/
+    - Create 5 splits from a file and exit: 
+      model_fit.py -f input.csv 5 -s -o output/
+    - Load splits from the previous command and perform cross-validation: 
+      model_fit.py -i output/ 5 -o output/
+    - Load splits from the previous command, and only process/cross-validate a specific split (split 2, in this case) against the others: 
+      model_fit.py -i output/ 5 -o output/ -c 2""")
     parser.add_argument(
         "-f",
         "--participant_file",

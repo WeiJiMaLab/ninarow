@@ -139,7 +139,7 @@ class CSVMove:
         self.__dict__ = new_state.__dict__
 
 
-def _parse_participant_csv(lines, group_id=1):
+def _parse_participant_csv(lines, group_id=1, ignore_csv_header = False):
     """
     Parses a list of CSV-encoded moves.
 
@@ -151,8 +151,13 @@ def _parse_participant_csv(lines, group_id=1):
         A list of CSVMove objects, one for each valid line passed in.
     """
     moves = []
-    for line in lines:
-        if line.isspace():
+    # read all the lines and convert them into CSVMove objects
+    for i, line in enumerate(lines):
+        # Skip the first line if we're ignoring the CSV header.
+        if i == 0 and ignore_csv_header:
+            continue
+        # Skip empty lines
+        if not line.strip():
             continue
         else:
             moves.append(CSVMove.create(line))
@@ -201,7 +206,7 @@ def _parse_participant_json(json_file, group_id=1, participant_id="1"):
     return moves
 
 
-def parse_participant_file(f, group_id=1, participant_id="1"):
+def parse_participant_file(f, group_id=1, participant_id="1", ignore_csv_header=False):
     """
     Parses a file by first attempting to parse it as a JSON file, and then falling back to a CSV file.
 
@@ -209,6 +214,7 @@ def parse_participant_file(f, group_id=1, participant_id="1"):
         f: The path to the file to parse.
         group_id: The group ID to assign to all games in this file. If the file is a CSV file, ignored if the CSV contains group information.
         participant_id: The name of the participant for all games in this file. Ignored if the file is a CSV file.
+        ignore_csv_header: If True, the first line of the CSV file will be ignored.
     """
     with open(f, 'r') as lines:
         try:
@@ -217,7 +223,7 @@ def parse_participant_file(f, group_id=1, participant_id="1"):
             print(
                 "File is either not a JSON file, or is malformed. Attempting to parse as a CSV...")
             lines.seek(0)
-        return _parse_participant_csv(lines, group_id)
+        return _parse_participant_csv(lines, group_id, ignore_csv_header)
 
 
 def parse_bads_parameter_file_to_model_parameters(f):
