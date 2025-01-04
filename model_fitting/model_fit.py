@@ -111,18 +111,87 @@ class DefaultModel:
         """
         self.expt_factor = 1.0
         self.cutoff = 3.5
+        self.params = [{
+            "name": "Stopping threshold", 
+            "initial_value": 2.0, 
+            "lower_bound": 0.1, 
+            "upper_bound": 10.0, 
+            "plausible_lower_bound": 1.0, 
+            "plausible_upper_bound": 9.99},
+        {
+            "name": "Pruning threshold", 
+            "initial_value": 0.02, 
+            "lower_bound": 0.001, 
+            "upper_bound": 1.0, 
+            "plausible_lower_bound": 0.1, 
+            "plausible_upper_bound": 0.99},
+        {
+            "name": "Gamma", 
+            "initial_value": 0.2, 
+            "lower_bound": 0, 
+            "upper_bound": 1, 
+            "plausible_lower_bound": 0.001, 
+            "plausible_upper_bound": 0.5},
+        {
+            "name": "Lapse rate", 
+            "initial_value": 0.05, 
+            "lower_bound": 0, 
+            "upper_bound": 1, 
+            "plausible_lower_bound": 0.001, 
+            "plausible_upper_bound": 0.5
+            },
+        {
+            "name": "Opponent scale", 
+            "initial_value": 1.2, 
+            "lower_bound": 0.25, 
+            "upper_bound": 4, 
+            "plausible_lower_bound": 0.5, 
+            "plausible_upper_bound": 2},
+        {
+            "name": "Exploration constant", 
+            "initial_value": 0.8, 
+            "lower_bound": -10, 
+            "upper_bound": 10, 
+            "plausible_lower_bound": -5, 
+            "plausible_upper_bound": 5},
+        {
+            "name": "Center weight", 
+            "initial_value": 1, 
+            "lower_bound": -10, 
+            "upper_bound": 10, 
+            "plausible_lower_bound": -5, 
+            "plausible_upper_bound": 5},
+        {
+            "name": "FP C_act",
+            "initial_value": 0.4,
+            "lower_bound": -10,
+            "upper_bound": 10,
+            "plausible_lower_bound": -5,
+            "plausible_upper_bound": 5},
+        {
+            "name": "FP C_pass",
+            "initial_value": 3.5,
+            "lower_bound": -10,
+            "upper_bound": 10,
+            "plausible_lower_bound": -5,
+            "plausible_upper_bound": 5},
+        {
+            "name": "FP delta",
+            "initial_value": 5,
+            "lower_bound": -10,
+            "upper_bound": 10,
+            "plausible_lower_bound": -5,
+            "plausible_upper_bound": 5}
+        ]
 
-        self.initial_params = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
-                                        1, 0.4, 3.5, 5], dtype=np.float64)
-        self.upperbound = np.array(
-            [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float64)
-        self.lowerbound = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
-                                    10, -10, -10, -10], dtype=np.float64)
-        self.plausible_upperbound = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
-                                              5, 5, 5, 5], dtype=np.float64)
-        self.plausible_lowerbound = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
-                                              5, -5, -5, -5], dtype=np.float64)
-        self.c = 50
+        self.param_names = [param["name"] for param in self.params]
+        self.initial_params = np.array([param["initial_value"] for param in self.params], dtype=np.float64)
+        self.upper_bound = np.array([param["upper_bound"] for param in self.params], dtype=np.float64)
+        self.lower_bound = np.array([param["lower_bound"] for param in self.params], dtype=np.float64)
+        self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.params], dtype=np.float64)
+        self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.params], dtype=np.float64)
+
+        self.c = 50 # used in generate_attempt_counts
 
     def create_heuristic(self, params):
         """
@@ -376,7 +445,7 @@ class ModelFitter:
         opt_fun.current_iteration_count = 0
 
         # run PyBADS to optimize the initial parameter guesses
-        bads = BADS(opt_fun, self.model.initial_params, self.model.lowerbound, self.model.upperbound, self.model.plausible_lowerbound, self.model.plausible_upperbound, options=bads_options)
+        bads = BADS(opt_fun, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         
         out_params = bads.optimize()['x']
 
@@ -428,13 +497,14 @@ def initialize_thread(shared_value):
     global Lexpt
     Lexpt = shared_value
 
-def initialize_global_threads(num_threads, manual_seed=None):
+def initialize_thread_pool(num_threads, manual_seed=None):
     global Lexpt, pool
     Lexpt = Value('d', 0)
     pool = Pool(num_threads, initializer=initialize_thread, initargs=(Lexpt,))
 
     if manual_seed is not None:
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
+        print(f"Setting manual seed {manual_seed} for single-thread")
         pool.starmap(set_thread_random_seeds, [(manual_seed, i) for i in range(num_threads)])
 
 def set_thread_random_seeds(base_seed, thread_id):

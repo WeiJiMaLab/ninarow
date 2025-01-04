@@ -15,7 +15,6 @@ from matplotlib.backends.backend_qtagg import (
 from matplotlib.figure import Figure
 import math
 
-
 def pattern_string_to_board_positions(pattern_string):
     output = []
     for i in range(len(pattern_string)):
