@@ -110,15 +110,13 @@ def df_to_CSVMove(df, warn = True):
 
         yield CSVMove(board, move, reaction_time, group_id, participant_id)
 
-
-
-def show(black, white, format = "standard", fig_ax_tuple = None, show_fixation = False, show_order = False, show_index = False):
+def show(black, white, format = "standard", existing_fig = None, show_fixation = False, show_order = False, show_index = False):
     """
     Parameters:
     black (int or array-like): array of black pieces, as integer positions. If an integer is provided, it will be converted to an array.
     white (int or array-like): array of white pieces, as integer positions. If an integer is provided, it will be converted to an array.
     format (str, optional): Format of the board. Default is "standard".
-    fig_ax_tuple (tuple, optional): Tuple containing figure and axis objects. If None, a new figure and axis will be created.
+    existing_fig (tuple, optional): Tuple containing figure and axis objects. If None, a new figure and axis will be created.
     show_fixation (bool, optional): If True, shows the fixation point on the board. Default is False.
     show_order (bool, optional): If True, shows the order of pieces on the board. Default is False.
     show_index (bool, optional): If True, shows the index of each position on the board. Default is False.
@@ -136,10 +134,10 @@ def show(black, white, format = "standard", fig_ax_tuple = None, show_fixation =
     space_color = (0.9, 0.9, 0.9, 1)
     base_color = (0.3, 0.3, 0.3, 1)
 
-    if fig_ax_tuple is None:
+    if existing_fig is None:
         fig, ax1 = plt.subplots(1, 1, figsize = (4, 3))
     else:
-        fig, ax1 = fig_ax_tuple
+        fig, ax1 = existing_fig
 
     #if the base shows that moving is available
     if show_fixation:
@@ -190,8 +188,8 @@ def show(black, white, format = "standard", fig_ax_tuple = None, show_fixation =
         
     return fig, ax1
 
-def add_circle(index, fig_ax_tuple, color = "#db6b63"):
-    fig, ax = fig_ax_tuple
+def add_circle(index, existing_fig, color = "#db6b63"):
+    fig, ax = existing_fig
     pos = board_position_to_pixel(index_to_coord([index])[::-1])
     for i, piece in enumerate(index_to_coord([index])[::-1]):
         pos = board_position_to_pixel(piece[::-1])
