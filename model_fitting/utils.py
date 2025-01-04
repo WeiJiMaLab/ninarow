@@ -2,7 +2,17 @@ import numpy as np
 import pandas as pd
 from parsers import CSVMove
 from fourbynine import fourbynine_board, fourbynine_pattern, fourbynine_move, Player_Player1, Player_Player2, bool_to_player, player_to_string
+import numpy as np 
+import matplotlib.pyplot as plt 
+from collections import defaultdict
+from matplotlib import patches
 
+def int_to_binary_array(x):
+    if np.isnan(x): return np.zeros(36)
+    return np.array(list(f'{int(x):036b}'))[::-1].astype(int)
+
+def index_to_coord(l): 
+    return [np.unravel_index(x,(4, 9)) for x in l]
 
 def make_splits(df, n_splits  = 5, output_dir = None): 
     """
@@ -100,3 +110,93 @@ def df_to_CSVMove(df, warn = True):
 
         yield CSVMove(board, move, reaction_time, group_id, participant_id)
 
+
+
+def show(black, white, format = "standard", fig_ax_tuple = None, show_fixation = False, show_order = False, show_index = False):
+    """
+    Parameters:
+    black (int or array-like): array of black pieces, as integer positions. If an integer is provided, it will be converted to an array.
+    white (int or array-like): array of white pieces, as integer positions. If an integer is provided, it will be converted to an array.
+    format (str, optional): Format of the board. Default is "standard".
+    fig_ax_tuple (tuple, optional): Tuple containing figure and axis objects. If None, a new figure and axis will be created.
+    show_fixation (bool, optional): If True, shows the fixation point on the board. Default is False.
+    show_order (bool, optional): If True, shows the order of pieces on the board. Default is False.
+    show_index (bool, optional): If True, shows the index of each position on the board. Default is False.
+    Returns:
+    tuple: A tuple containing the figure and axis objects.
+    """
+
+    if type(black) == int: 
+        black = np.where(int_to_binary_array(black))[0]
+    if type(white) == int:
+        white = np.where(int_to_binary_array(white))[0]
+
+    black_color = '#2e3236'
+    white_color = '#a9aab0'
+    space_color = (0.9, 0.9, 0.9, 1)
+    base_color = (0.3, 0.3, 0.3, 1)
+
+    if fig_ax_tuple is None:
+        fig, ax1 = plt.subplots(1, 1, figsize = (4, 3))
+    else:
+        fig, ax1 = fig_ax_tuple
+
+    #if the base shows that moving is available
+    if show_fixation:
+        circle3 = patches.Circle([400, -550], radius=27, edgecolor= base_color, fill = False, linewidth = 2)
+        ax1.add_patch(circle3)
+    
+    if format == "standard":
+        #draw the grid
+        for x in np.linspace(85, 715, 10):
+            ax1.plot([x, x], [-160, -440], linewidth = 2, color = (0.6, 0.6, 0.6, 1))
+
+        for y in np.linspace(160, 440, 5):
+            ax1.plot([85, 715], [-y, -y], linewidth = 2, color = (0.6, 0.6, 0.6, 1))
+    else: 
+        for i, piece in enumerate(index_to_coord([i for i in range(36)])):
+            pos = board_position_to_pixel(piece[::-1])
+            circle1 = patches.Circle(pos, radius=27, color = space_color)
+            ax1.add_patch(circle1)
+            index = 2 * i + 2
+
+    #draw the pieces
+    for i, piece in enumerate(index_to_coord(white)):
+        pos = board_position_to_pixel(piece[::-1])
+        circle1 = patches.Circle(pos, radius=27, color = white_color)
+        ax1.add_patch(circle1)
+        index = 2 * i + 2
+        if show_order:
+            ax1.text(pos[0], pos[1], index, fontsize = 20, fontweight = 500, color = "w", horizontalalignment = "center", verticalalignment = "center")
+    
+    for j, piece in enumerate(index_to_coord(black)): 
+        pos = board_position_to_pixel(piece[::-1])
+        circle2 = patches.Circle(pos, radius=27, color = black_color)
+        ax1.add_patch(circle2)
+        index = 2 * j + 1
+        if show_order:
+            ax1.text(pos[0], pos[1], index, fontsize = 20, fontweight = 500, color = "w", horizontalalignment = "center", verticalalignment = "center")
+    
+    if show_index: 
+        for i, piece in enumerate(index_to_coord([i for i in range(36)])):
+            pos = board_position_to_pixel(piece[::-1])
+            circle1 = patches.Circle(pos, radius=27, color = space_color)
+            ax1.text(pos[0] - 29, pos[1] + 17, i, fontsize = 8, fontweight = 500, color = "k", horizontalalignment = "left", verticalalignment = "bottom")
+
+
+    ax1.axis("off")
+    ax1.set_xlim(0, 800)
+    ax1.set_ylim(-600, 0)
+        
+    return fig, ax1
+
+def add_circle(index, fig_ax_tuple, color = "#db6b63"):
+    fig, ax = fig_ax_tuple
+    pos = board_position_to_pixel(index_to_coord([index])[::-1])
+    for i, piece in enumerate(index_to_coord([index])[::-1]):
+        pos = board_position_to_pixel(piece[::-1])
+        circle1 = patches.Circle(pos, radius=27, color = color)
+        ax.add_patch(circle1)
+
+def board_position_to_pixel(pos): 
+    return (np.array(pos) * 70 + np.array([120, 195])) * (np.array([1, -1])) 

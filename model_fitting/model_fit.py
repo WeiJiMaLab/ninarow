@@ -199,10 +199,11 @@ class DefaultModel:
         during the search process.
 
         Args:
-            params: The parameters of the heuristic.
+            params: The parameters of the heuristic (the same length as self.params).
         Returns:
             A heuristic with the given parameters.
         """
+        assert len(params) == len(self.params), f"Parameter length mismatch! Expected {len(self.params)} but got {len(params)}"
         return fourbynine.fourbynine_heuristic.create(fourbynine.DoubleVector(bads_parameters_to_model_parameters(params)), True)
 
     def create_search(self, params, heuristic, board):
