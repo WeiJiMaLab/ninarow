@@ -36,6 +36,12 @@ FetchContent_MakeAvailable(Eigen)
 find_package(SWIG REQUIRED)
 find_package(PythonLibs REQUIRED)
 
+# Find Boost library
+find_package(Boost REQUIRED)
+
+# Add Boost include directories
+include_directories(${Boost_INCLUDE_DIRS})
+
 include(${SWIG_USE_FILE})
 set(CMAKE_SWIG_FLAGS "")
 include_directories(${PYTHON_INCLUDE_DIRS})
