@@ -7,6 +7,9 @@
 #include <iostream>
 #include <random>
 #include <unordered_map>
+#include <boost/random/bernoulli_distribution.hpp>
+#include <boost/random/normal_distribution.hpp>
+#include <boost/random/mersenne_twister.hpp>
 
 #include "bfs_node.h"
 #include "fourbynine_features.h"
@@ -197,7 +200,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   /**
    * Our internal random number generator.
    */
-  std::mt19937_64 engine;
+  boost::random::mt19937 engine;
 
   /**
    * Holds a list of weights for all of the features of the heuristic.
@@ -225,13 +228,13 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * A random distribution used for supplying the heuristic evaluation function
    * with a noise parameter.
    */
-  std::normal_distribution<double> noise;
+  boost::random::normal_distribution<double> noise;
 
   /**
    * A random distribution used for determining when the heuristic evaluation
    * should lapse and choose a random move. See `lapse_rate`.
    */
-  std::bernoulli_distribution lapse;
+  boost::random::bernoulli_distribution<> lapse;
 
   /**
    * If true, noise is injected across the evaluation function, including random
@@ -306,9 +309,8 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
                         params[param_pack_idx + j + num_param_packs],
                         params[param_pack_idx + j + 2 * num_param_packs]);
     }
-    noise = std::normal_distribution<double>(0.0, 1.0);
-    lapse = std::bernoulli_distribution(lapse_rate);
-    for (std::size_t i = 0; i < Board::get_board_size(); ++i)
+    noise = boost::random::normal_distribution<double>(0.0, 1.0);
+    lapse = boost::random::bernoulli_distribution<>(lapse_rate);    for (std::size_t i = 0; i < Board::get_board_size(); ++i)
       vtile[i] = 1.0 / sqrt(pow(i / Board::get_board_width() - 1.5, 2) +
                             pow(i % Board::get_board_width() - 4.0, 2));
     c_self = 2.0 * opp_scale / (1.0 + opp_scale);
@@ -557,7 +559,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     }
 
     if (options.size() > 0) {
-      return typename Board::MoveT(options[std::uniform_int_distribution<int>(
+      return typename Board::MoveT(options[boost::random::uniform_int_distribution<int>(
                                        0, options.size() - 1U)(engine)],
                                    0.0, b.active_player());
     } else {
@@ -627,7 +629,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    */
   void remove_features() {
     for (auto& feature : features) {
-      if (std::bernoulli_distribution{
+      if (boost::random::bernoulli_distribution<>{
               feature_group_weights[feature.weight_index].drop_rate}(engine)) {
         feature.enabled = false;
       } else {
