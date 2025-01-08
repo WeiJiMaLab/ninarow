@@ -326,6 +326,15 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   void seed_generator(uint64_t seed) { engine.seed(seed); }
 
   /**
+    * Print the state of the RNG engine.
+    */
+  void print_rng_state() const {
+    std::ostringstream state_stream;
+    state_stream << engine; // Serialize the engine state into the stream
+    std::cout << "RNG state: " << state_stream.str() << std::endl;
+  }
+
+  /**
    * @return A list of feature group weights.
    */
   std::vector<FeatureGroupWeight>& get_feature_group_weights() {
