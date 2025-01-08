@@ -290,9 +290,14 @@ class ModelFitter:
             move, task = copy.deepcopy(random.choice(unfinished_items))
             local_Lexpt_delta = 0
             while not move_tasks[move].is_done():
+                search = None
                 search = self.model.create_search(
                     params, heuristic, move.board)
+                
+                heuristic.print_rng_state()
                 search.complete_search()
+                heuristic.print_rng_state()
+
                 best_move = heuristic.get_best_move(search.get_tree())
                 success = best_move.board_position == move.move.board_position
                 local_Lexpt_delta += task.report_trial(success)

@@ -176,10 +176,9 @@ class DefaultModel:
         Returns:
             The index of the best move for the given board state.
         '''
-        self.search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
-        self.search.complete_search()
-        return self.heuristic.get_best_move(self.search.get_tree()).board_position
-
+        search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
+        search.complete_search()
+        return self.heuristic.get_best_move(search.get_tree()).board_position
 
 class ModelFitter:
     """
@@ -223,7 +222,6 @@ class ModelFitter:
             cutoff: A stop-loss cutoff that will cause us to exit early if needed.
             move_tasks: The list of moves that need to be evaluated by the heuristic.
         """
-        # heuristic = self.model.create_heuristic(params)
         self.model.set_params(params)
 
         while Lexpt.value <= cutoff:
@@ -234,7 +232,7 @@ class ModelFitter:
             move, task = copy.deepcopy(random.choice(unfinished_items))
             local_Lexpt_delta = 0
             while not move_tasks[move].is_done():
-
+                
                 best_move = self.model.predict(move.board)
                 success = best_move == move.move.board_position
 
@@ -395,7 +393,7 @@ class ModelFitter:
         final_l_values = self.estimate_l_values(moves, out_params, 10)
         return out_params, final_l_values
 
-    def cross_validate(self, folds, i):
+    def cross_validate(self, folds, leave_out):
         """
         Given a set of pre-split folds, cross validate the i-th group against the rest, i.e.,
         fit against all of the folds but the i-th and evaluate the resultant fit on the i-th group.
@@ -408,20 +406,14 @@ class ModelFitter:
             The best-fit parameters for all of the folds but the ith, as well as the log-likelihood
             of the moves from both the training (non-i) and test (i) sets.
         """
+
+        assert leave_out < len(folds), "Invalid leave-out index!"
+
         print("Cross validating split {} against the other {} splits".format(
-            i + 1, len(folds) - 1))
-        test = folds[i]
-        train = []
-
-        # if there's only one fold, train on all of it
-        if len(folds) == 1:
-            train.extend(folds[0])
-
-        # otherwise, train on all folds but the i-th
-        else:
-            for j in range(len(folds)):
-                if i != j:
-                    train.extend(folds[j])
+            leave_out + 1, len(folds) - 1))
+        test = folds[leave_out]
+        train_folds = [fold for i, fold in enumerate(folds) if i != leave_out]
+        train = [move for fold in train_folds for move in fold]
 
         params, loglik_train = self.fit_model(train)
         test_tasks = {}
