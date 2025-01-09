@@ -47,7 +47,7 @@ class SuccessFrequencyTracker:
         """
         return self.success_count == self.success_threshold
 
-    def report_trial(self, success):
+    def delta_log_likelihood(self, success):
         """
         Report a heuristic evaluation of the tracked position. If success is true, mark a success, else mark a failure.
 
@@ -58,8 +58,6 @@ class SuccessFrequencyTracker:
             The current log-loss of this tracker; if log-loss grows too much, we give up.
         """
         scale_factor = self.expt_factor / self.success_threshold
-
-        self.attempt_count += 1
 
         if success:
             self.success_count += 1
@@ -165,7 +163,7 @@ class DefaultModel:
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float64)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float64)
 
-        self.c = 50 # used in generate_attempt_counts
+        self.c = 50 # used in calculate_expected_counts
 
     def set_params(self, params):
         assert len(params) == len(self.parameter_list), f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
@@ -205,12 +203,12 @@ class ModelFitter:
         self.model = model
         if random_sample:
             self.random_sample = True
-            self.sample_count = random_sample
-            if self.sample_count <= 1:
+            self.n_samples = random_sample
+            if self.n_samples <= 1:
                 raise Exception("Sample count must be greater than one!")
         else:
             self.random_sample = False
-            self.sample_count = 0
+            self.n_samples = 0
         self.verbose = verbose
         self.num_workers = threads
 
@@ -239,8 +237,9 @@ class ModelFitter:
                 
                 best_move = self.model.predict(move.board)
                 success = best_move == move.move.board_position
+                tracker.attempt_count += 1
 
-                process_delta_LL += tracker.report_trial(success)
+                process_delta_LL += tracker.delta_log_likelihood(success)
                 if (success):
                     with trackers.lock:
                         if tracker.success_count == trackers[move].success_count + 1:
@@ -266,14 +265,13 @@ class ModelFitter:
         Returns:
             The log-likelihood of each observed move at each position given the set of parameters.
         """
-        N = len(trackers)
+        n_trials = len(trackers)
 
-        cutoff = N * self.model.cutoff
-        shared_trackers = UltraDict(
-            trackers, full_dump_size=N*1024*1024, shared_lock=True)
+        cutoff = n_trials * self.model.cutoff
+        shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
 
         global Lexpt
-        Lexpt.value = N * self.model.expt_factor
+        Lexpt.value = n_trials * self.model.expt_factor
 
         global pool
         results = [pool.apply_async(self.parallel_log_likelihood, (params, cutoff, shared_trackers,)) for i in range(self.num_workers)]
@@ -284,7 +282,7 @@ class ModelFitter:
             L_values[move] = shared_trackers[move].L
         return L_values
 
-    def generate_attempt_counts(self, L_values, c):
+    def calculate_expected_counts(self, L_values, c):
         """
         Generate the distribution of observation counts we should see for each move given that move's
         L-values. Essentially, we're converting likelihoods to probabilities here.
@@ -304,7 +302,7 @@ class ModelFitter:
         times = (c * interp1(p)) / np.mean(interp2(p))
         return np.vectorize(lambda x: max(x, 1))(np.round(times))
 
-    def estimate_l_values(self, moves, params, sample_count):
+    def estimate_l_values(self, moves, params, n_samples):
         """
         Estimates an initial guess for the L-values of the observed moves, given a plausible set of
         starting parameters. Averages over multiple samples.
@@ -312,26 +310,15 @@ class ModelFitter:
         Args:
             moves: The set of observed moves.
             params: The parameters to evaluate.
-            sample_count: The number of samples to average over.
+            n_samples: The number of samples to average over.
 
         Returns:
             A list of estimated L-values for the observed moves given the parameters.
         """
-        trackers = {}
-        for move in moves:
-            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor)
-        l_values = []
-        for i in tqdm(range(sample_count)):
-            l_values.append(self.log_likelihood(
-                trackers, params))
-        average_l_values = []
-        for move in tqdm(moves):
-            average = 0.0
-            for l_value in l_values:
-                average += l_value[move]
-            average /= len(l_values)
-            average_l_values.append(average)
-        return average_l_values
+        trackers = {move: SuccessFrequencyTracker(self.model.expt_factor) for move in moves}
+        l_values = [self.log_likelihood(trackers, params) for _ in tqdm(range(n_samples))]
+        average_l_values = [np.mean([l_value[move] for l_value in l_values]) for move in tqdm(moves)]
+        return np.array(average_l_values)
 
     def fit_model(self, moves,
                   bads_options={
@@ -349,17 +336,18 @@ class ModelFitter:
         print("[Preprocessing] Initial log-likelihood estimation")
 
         average_l_values = self.estimate_l_values(moves, self.model.initial_params, 10)
-        counts = self.generate_attempt_counts(np.array(average_l_values), self.model.c)
+        counts = self.calculate_expected_counts(average_l_values, self.model.c).astype(int)
+        
         trackers = {}
         for count, move in [*zip(counts, moves)]:
-            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor, success_threshold=count)
+            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor, success_threshold= count)
 
         if self.random_sample:
-            clamped_sample_count = min(self.sample_count, len(trackers))
+            clamped_n_samples = min(self.n_samples, len(trackers))
 
             # If we're sampling, we need to make sure we're not trying to sample more than we have.
-            if clamped_sample_count != self.sample_count:
-                print(f"Warning: Sample count ({self.sample_count}) > dataset size ({len(trackers)})! Using full dataset...")
+            if clamped_n_samples != self.n_samples:
+                print(f"Warning: Sample count ({self.n_samples}) > dataset size ({len(trackers)})! Using full dataset...")
 
         def opt_fun(x):
             '''
@@ -367,7 +355,7 @@ class ModelFitter:
             '''
             if self.random_sample:
                 subsampled_keys = random.sample(
-                    sorted(trackers), clamped_sample_count)
+                    sorted(trackers), clamped_n_samples)
                 subsampled_trackers = {k: trackers[k] for k in subsampled_keys}
             else:
                 subsampled_trackers = trackers
@@ -519,7 +507,7 @@ def main():
         nargs=1,
         type=int,
         help="If specified, instead of testing each position on a BADS function evaluation, instead randomly sample up to N positions without replacement.",
-        metavar=('sample_count'))
+        metavar=('n_samples'))
     parser.add_argument(
         "-t",
         "--threads",
