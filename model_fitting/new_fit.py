@@ -17,14 +17,14 @@ from parsers import *
 import pandas as pd
 
 
-class Tracker:
+class SuccessFrequencyTracker:
     """
     Tracks the number of times the heuristic has evaluated a given position to the expected evaluation. Used for
     fitting the heuristic to a given dataset.
     """
 
     def __init__(
-            self, expt_factor):
+            self, expt_factor, success_threshold = 1):
         """
         Constructor.
 
@@ -33,16 +33,21 @@ class Tracker:
         """
         self.attempt_count = 0
         self.success_count = 0
-        self.success_threshold = 1
-        self.log_likelihood = 0.0
-
+        self.success_threshold = success_threshold
+        self.L = 0.0
         self.expt_factor = expt_factor
-        self.scale_factor = self.expt_factor / self.success_threshold
 
     def __repr__(self):
-        return f"Tracker(attempts: {self.attempt_count}, successes: {self.success_count}, threshold: {self.success_threshold}, L: {self.log_likelihood})"
+        return " ".join([str(self.attempt_count), str(self.success_count), str(self.success_threshold)])
 
-    def delta_log_likelihood(self, success):
+    def is_done(self):
+        """
+        Returns:
+            True if we've observed the expected number of evaluations.
+        """
+        return self.success_count == self.success_threshold
+
+    def report_trial(self, success):
         """
         Report a heuristic evaluation of the tracked position. If success is true, mark a success, else mark a failure.
 
@@ -52,16 +57,20 @@ class Tracker:
         Returns:
             The current log-loss of this tracker; if log-loss grows too much, we give up.
         """
+        scale_factor = self.expt_factor / self.success_threshold
+
         self.attempt_count += 1
 
         if success:
             self.success_count += 1
-            # reset the attempt counts
-            self.attempt_count = 0
-            return -self.scale_factor
+            if self.success_count < self.success_threshold: self.attempt_count = 0
+            return -scale_factor
         else:
-            delta = self.scale_factor * 1 / self.attempt_count
-            self.log_likelihood += delta
+            # if it's not a success, 
+            # IBS tells us that the delta LL
+            # must be 1/k
+            delta = scale_factor * (1 / self.attempt_count)
+            self.L += delta
             return delta
 
 
@@ -231,7 +240,7 @@ class ModelFitter:
                 best_move = self.model.predict(move.board)
                 success = best_move == move.move.board_position
 
-                process_delta_LL += tracker.delta_log_likelihood(success)
+                process_delta_LL += tracker.report_trial(success)
                 if (success):
                     with trackers.lock:
                         if tracker.success_count == trackers[move].success_count + 1:
@@ -272,7 +281,7 @@ class ModelFitter:
 
         L_values = {}
         for move in shared_trackers:
-            L_values[move] = shared_trackers[move].log_likelihood
+            L_values[move] = shared_trackers[move].L
         return L_values
 
     def generate_attempt_counts(self, L_values, c):
@@ -310,7 +319,7 @@ class ModelFitter:
         """
         trackers = {}
         for move in moves:
-            trackers[move] = Tracker(self.model.expt_factor)
+            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor)
         l_values = []
         for i in tqdm(range(sample_count)):
             l_values.append(self.log_likelihood(
@@ -342,10 +351,8 @@ class ModelFitter:
         average_l_values = self.estimate_l_values(moves, self.model.initial_params, 10)
         counts = self.generate_attempt_counts(np.array(average_l_values), self.model.c)
         trackers = {}
-        for move in moves:
-            trackers[move] = Tracker(self.model.expt_factor)
-        for i in range(len(counts)):
-            trackers[moves[i]].success_threshold = int(counts[i])
+        for count, move in [*zip(counts, moves)]:
+            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor, success_threshold=count)
 
         if self.random_sample:
             clamped_sample_count = min(self.sample_count, len(trackers))
@@ -414,7 +421,7 @@ class ModelFitter:
         test_trackers = {}
 
         for move in test:
-            test_trackers[move] = Tracker(self.model.expt_factor)
+            test_trackers[move] = SuccessFrequencyTracker(self.model.expt_factor)
 
         loglik_test = list(self.log_likelihood(test_trackers, params).values())
         return params, loglik_train, loglik_test
