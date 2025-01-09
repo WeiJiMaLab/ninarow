@@ -253,7 +253,7 @@ class ModelFitter:
                             Lexpt.value += process_delta_LL
                         break
 
-    def log_likelihood(self, trackers, params):
+    def log_likelihood(self, params, trackers):
         """
         Computes the log likelihood of the given set of parameters being the set that best fits
         the observed data.
@@ -316,7 +316,7 @@ class ModelFitter:
             A list of estimated L-values for the observed moves given the parameters.
         """
         trackers = {move: SuccessFrequencyTracker(self.model.expt_factor) for move in moves}
-        l_values = [self.log_likelihood(trackers, params) for _ in tqdm(range(n_samples))]
+        l_values = [self.log_likelihood(params, trackers) for _ in tqdm(range(n_samples))]
         average_l_values = [np.mean([l_value[move] for l_value in l_values]) for move in tqdm(moves)]
         return np.array(average_l_values)
 
@@ -361,7 +361,7 @@ class ModelFitter:
                 subsampled_trackers = trackers
 
             log_likelihood = sum(
-                list(self.log_likelihood(subsampled_trackers, x).values()))
+                list(self.log_likelihood(x, subsampled_trackers).values()))
 
             if self.verbose:
                 print(
@@ -407,11 +407,10 @@ class ModelFitter:
 
         params, loglik_train = self.fit_model(train)
         test_trackers = {}
-
         for move in test:
             test_trackers[move] = SuccessFrequencyTracker(self.model.expt_factor)
-
-        loglik_test = list(self.log_likelihood(test_trackers, params).values())
+        loglik_test = list(self.log_likelihood(params, test_trackers).values())
+        
         return params, loglik_train, loglik_test
 
 
