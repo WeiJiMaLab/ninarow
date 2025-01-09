@@ -294,9 +294,7 @@ class ModelFitter:
                 search = self.model.create_search(
                     params, heuristic, move.board)
                 
-                heuristic.print_rng_state()
                 search.complete_search()
-                heuristic.print_rng_state()
 
                 best_move = heuristic.get_best_move(search.get_tree())
                 success = best_move.board_position == move.move.board_position
