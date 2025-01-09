@@ -17,10 +17,59 @@ from parsers import *
 import pandas as pd
 
 
+class Tracker:
+    """
+    Tracks the number of times the heuristic has evaluated a given position to the expected evaluation. Used for
+    fitting the heuristic to a given dataset.
+    """
+
+    def __init__(
+            self, expt_factor):
+        """
+        Constructor.
+
+        Args:
+            expt_factor: Controls the fitting cutoff of the BADS process.
+        """
+        self.attempt_count = 0
+        self.success_count = 0
+        self.success_threshold = 1
+        self.log_likelihood = 0.0
+
+        self.expt_factor = expt_factor
+        self.scale_factor = self.expt_factor / self.success_threshold
+
+    def __repr__(self):
+        return f"Tracker(attempts: {self.attempt_count}, successes: {self.success_count}, threshold: {self.success_threshold}, L: {self.log_likelihood})"
+
+    def delta_log_likelihood(self, success):
+        """
+        Report a heuristic evaluation of the tracked position. If success is true, mark a success, else mark a failure.
+
+        Args:
+            success: If true, mark a success, else mark a failure
+
+        Returns:
+            The current log-loss of this tracker; if log-loss grows too much, we give up.
+        """
+        self.attempt_count += 1
+
+        if success:
+            self.success_count += 1
+            # reset the attempt counts
+            self.attempt_count = 0
+            return -self.scale_factor
+        else:
+            delta = self.scale_factor * 1 / self.attempt_count
+            self.log_likelihood += delta
+            return delta
+
+
 class DefaultModel:
     """
     The default model used by Bas.
     """
+
     def __init__(self):
         """
         Constructor.
@@ -126,12 +175,12 @@ class DefaultModel:
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
 
-
 class ModelFitter:
     """
     The main class for finding the best heuristic/search parameter
     fit for a given dataset.
     """
+
     def __init__(self, model, random_sample=None, verbose=False, threads=16):
         """
         Constructor.
@@ -156,18 +205,7 @@ class ModelFitter:
         self.verbose = verbose
         self.num_workers = threads
 
-        # cutoff for maximum log likelihood
-        self.cutoff = 3.5
-
-        # expected factor for log likelihood
-        self.expt_factor = 1.0
-
-        # when success_count reaches this value, the tracker is considered done
-        self.success_threshold = 1
-        self.scale_factor = (self.expt_factor / self.success_threshold)
-
-
-    def parallel_ibs(self, params, cutoff, trackers):
+    def parallel_log_likelihood(self, params, cutoff, trackers):
         """
         The main parallelized portion of our workload. Takes a set of
         heuristic parameters and a list of moves and runs the heuristic
@@ -179,47 +217,35 @@ class ModelFitter:
             cutoff: A stop-loss cutoff that will cause us to exit early if needed.
             trackers: The list of moves that need to be evaluated by the heuristic.
         """
-        # set the parameters for the model
         self.model.set_params(params)
 
-        # while we haven't reached the cutoff, and there are still unfinished items
         while Lexpt.value <= cutoff:
-            unfinished_items = list(filter(lambda x: x[1]["success_count"] < self.success_threshold, trackers.items()))
+            unfinished_items = list(
+                filter(lambda x: x[1].success_count < x[1].success_threshold, trackers.items()))
             if not unfinished_items:
                 break
+            move, tracker = copy.deepcopy(random.choice(unfinished_items))
+            process_delta_LL = 0
+            while tracker.success_count < tracker.success_threshold:
+                
+                best_move = self.model.predict(move.board)
+                success = best_move == move.move.board_position
 
-            # get a single move to evaluate (at random)
-            move, task = copy.deepcopy(random.choice(unfinished_items))
-            process_delta_expected_LL = 0
-
-            # while the move hasn't been evaluated enough times (based on number of successes)
-            while task["success_count"] < self.success_threshold:
-                predicted_move = self.model.predict(move.board)
-                actual_move = move.move.board_position
-
-                if (predicted_move == actual_move):
-                    task["success_count"] += 1
-                    task["attempt_count"] = 0
-                    process_delta_expected_LL += -1 * self.scale_factor
+                process_delta_LL += tracker.delta_log_likelihood(success)
+                if (success):
                     with trackers.lock:
-                        if task["success_count"] == trackers[move]["success_count"] + 1:
-                            trackers[move] = task
-                            Lexpt.value += process_delta_expected_LL
+                        if tracker.success_count == trackers[move].success_count + 1:
+                            trackers[move] = tracker
+                            Lexpt.value += process_delta_LL
                     break
+                else:
+                    # We may need to exit early. This implicitly signals all of the other processes as well.
+                    if Lexpt.value + process_delta_LL > cutoff:
+                        with trackers.lock:
+                            Lexpt.value += process_delta_LL
+                        break
 
-                # implement IBS - if it's a miss, we increment the LL by 1/k
-                task["attempt_count"] += 1
-                delta = self.scale_factor * 1 / task["attempt_count"]
-                task["log_likelihood"] += delta
-                process_delta_expected_LL += delta
-
-                # We may need to exit early. This implicitly signals all of the other processes as well.
-                if Lexpt.value + process_delta_expected_LL > cutoff:
-                    with trackers.lock:
-                        Lexpt.value += process_delta_expected_LL
-                    break
-
-    def log_likelihood(self, moves, params):
+    def log_likelihood(self, trackers, params):
         """
         Computes the log likelihood of the given set of parameters being the set that best fits
         the observed data.
@@ -231,26 +257,22 @@ class ModelFitter:
         Returns:
             The log-likelihood of each observed move at each position given the set of parameters.
         """
-        trackers = {}
-        for move in moves:
-            trackers[move] = {"success_count": 0, "attempt_count": 0, "log_likelihood": 0.0}
+        N = len(trackers)
 
-        n_trials = len(moves)
+        cutoff = N * self.model.cutoff
+        shared_trackers = UltraDict(
+            trackers, full_dump_size=N*1024*1024, shared_lock=True)
 
-        cutoff = n_trials * self.model.cutoff
-        shared_trackers = UltraDict(trackers, full_dump_size= n_trials*1024*1024, shared_lock=True)
-
-        # Lexpt stands for expected log likelihood
         global Lexpt
-        Lexpt.value = n_trials * self.model.expt_factor
+        Lexpt.value = N * self.model.expt_factor
 
         global pool
-        results = [pool.apply_async(self.parallel_ibs, (params, cutoff, shared_trackers,)) for i in range(self.num_workers)]
+        results = [pool.apply_async(self.parallel_log_likelihood, (params, cutoff, shared_trackers,)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
         L_values = {}
         for move in shared_trackers:
-            L_values[move] = shared_trackers[move]["log_likelihood"]
+            L_values[move] = shared_trackers[move].log_likelihood
         return L_values
 
     def generate_attempt_counts(self, L_values, c):
@@ -286,11 +308,13 @@ class ModelFitter:
         Returns:
             A list of estimated L-values for the observed moves given the parameters.
         """
-        
+        trackers = {}
+        for move in moves:
+            trackers[move] = Tracker(self.model.expt_factor)
         l_values = []
         for i in tqdm(range(sample_count)):
             l_values.append(self.log_likelihood(
-                moves, params))
+                trackers, params))
         average_l_values = []
         for move in tqdm(moves):
             average = 0.0
@@ -317,18 +341,18 @@ class ModelFitter:
 
         average_l_values = self.estimate_l_values(moves, self.model.initial_params, 10)
         counts = self.generate_attempt_counts(np.array(average_l_values), self.model.c)
-        move_tasks = {}
+        trackers = {}
         for move in moves:
-            move_tasks[move] = SuccessFrequencyTracker2(self.model.expt_factor)
+            trackers[move] = Tracker(self.model.expt_factor)
         for i in range(len(counts)):
-            move_tasks[moves[i]].required_success_count = int(counts[i])
+            trackers[moves[i]].success_threshold = int(counts[i])
 
         if self.random_sample:
-            clamped_sample_count = min(self.sample_count, len(move_tasks))
+            clamped_sample_count = min(self.sample_count, len(trackers))
 
             # If we're sampling, we need to make sure we're not trying to sample more than we have.
             if clamped_sample_count != self.sample_count:
-                print(f"Warning: Sample count ({self.sample_count}) > dataset size ({len(move_tasks)})! Using full dataset...")
+                print(f"Warning: Sample count ({self.sample_count}) > dataset size ({len(trackers)})! Using full dataset...")
 
         def opt_fun(x):
             '''
@@ -336,13 +360,13 @@ class ModelFitter:
             '''
             if self.random_sample:
                 subsampled_keys = random.sample(
-                    sorted(move_tasks), clamped_sample_count)
-                subsampled_tasks = {k: move_tasks[k] for k in subsampled_keys}
+                    sorted(trackers), clamped_sample_count)
+                subsampled_trackers = {k: trackers[k] for k in subsampled_keys}
             else:
-                subsampled_tasks = move_tasks
+                subsampled_trackers = trackers
 
             log_likelihood = sum(
-                list(self.log_likelihood(subsampled_tasks, x).values()))
+                list(self.log_likelihood(subsampled_trackers, x).values()))
 
             if self.verbose:
                 print(
@@ -387,12 +411,12 @@ class ModelFitter:
         train = [move for fold in train_folds for move in fold]
 
         params, loglik_train = self.fit_model(train)
-        test_tasks = {}
+        test_trackers = {}
 
         for move in test:
-            test_tasks[move] = SuccessFrequencyTracker(self.model.expt_factor)
+            test_trackers[move] = Tracker(self.model.expt_factor)
 
-        loglik_test = list(self.log_likelihood(test_tasks, params).values())
+        loglik_test = list(self.log_likelihood(test_trackers, params).values())
         return params, loglik_train, loglik_test
 
 
