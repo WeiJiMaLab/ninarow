@@ -30,14 +30,9 @@ class IBSTracker:
         Args:
             expt_factor: Controls the fitting cutoff of the BADS process.
         """
-        self.attempt_count = 0
-        self.success_count = 0
         self.success_threshold = success_threshold
-        self.log_likelihood = 0.0
         self.expt_factor = expt_factor
-
-    def __repr__(self):
-        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
+        self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
 
     def record_success(self):
         """
@@ -62,8 +57,11 @@ class IBSTracker:
         self.attempt_count += 1
         delta = scale_factor * (1 / self.attempt_count)
         self.log_likelihood += delta
-
         return delta
+    
+    def __repr__(self):
+        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
+
 
 
 class DefaultModel:
@@ -370,8 +368,7 @@ class ModelFitter:
             else:
                 subsampled_trackers = trackers
 
-            log_likelihood = sum(
-                list(self.log_likelihood(x, subsampled_trackers).values()))
+            log_likelihood = sum(list(self.log_likelihood(x, subsampled_trackers).values()))
 
             if self.verbose:
                 print(
