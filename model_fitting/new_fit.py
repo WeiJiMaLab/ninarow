@@ -17,14 +17,13 @@ from parsers import *
 import pandas as pd
 
 
-class SuccessFrequencyTracker:
+class IBSTracker:
     """
     Tracks the number of times the heuristic has evaluated a given position to the expected evaluation. Used for
     fitting the heuristic to a given dataset.
     """
 
-    def __init__(
-            self, expt_factor, success_threshold = 1):
+    def __init__(self, expt_factor, success_threshold = 1):
         """
         Constructor.
 
@@ -34,42 +33,37 @@ class SuccessFrequencyTracker:
         self.attempt_count = 0
         self.success_count = 0
         self.success_threshold = success_threshold
-        self.L = 0.0
+        self.log_likelihood = 0.0
         self.expt_factor = expt_factor
 
     def __repr__(self):
-        return " ".join([str(self.attempt_count), str(self.success_count), str(self.success_threshold)])
+        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
 
-    def is_done(self):
+    def record_success(self):
         """
+        When the prediction is correct, record it and return the log likelihood diff
         Returns:
-            True if we've observed the expected number of evaluations.
-        """
-        return self.success_count == self.success_threshold
-
-    def delta_log_likelihood(self, success):
-        """
-        Report a heuristic evaluation of the tracked position. If success is true, mark a success, else mark a failure.
-
-        Args:
-            success: If true, mark a success, else mark a failure
-
-        Returns:
-            The current log-loss of this tracker; if log-loss grows too much, we give up.
+            The change in log-likelihood.
         """
         scale_factor = self.expt_factor / self.success_threshold
+        self.success_count += 1
 
-        if success:
-            self.success_count += 1
-            if self.success_count < self.success_threshold: self.attempt_count = 0
-            return -scale_factor
-        else:
-            # if it's not a success, 
-            # IBS tells us that the delta LL
-            # must be 1/k
-            delta = scale_factor * (1 / self.attempt_count)
-            self.L += delta
-            return delta
+        # reset the attempt count
+        self.attempt_count = 0
+        return -scale_factor
+
+    def record_failure(self):
+        """
+        When a prediction is incorrect, record it and return the log likelihood diff
+        Returns:
+            The change in log-likelihood.
+        """
+        scale_factor = self.expt_factor / self.success_threshold
+        self.attempt_count += 1
+        delta = scale_factor * (1 / self.attempt_count)
+        self.log_likelihood += delta
+
+        return delta
 
 
 class DefaultModel:
@@ -201,6 +195,7 @@ class ModelFitter:
             threads: The number of threads to use when fitting.
         """
         self.model = model
+
         if random_sample:
             self.random_sample = True
             self.n_samples = random_sample
@@ -209,10 +204,11 @@ class ModelFitter:
         else:
             self.random_sample = False
             self.n_samples = 0
+
         self.verbose = verbose
         self.num_workers = threads
 
-    def parallel_log_likelihood(self, params, cutoff, trackers):
+    def parallel_log_likelihood(self, params, trackers, cutoff):
         """
         The main parallelized portion of our workload. Takes a set of
         heuristic parameters and a list of moves and runs the heuristic
@@ -226,31 +222,45 @@ class ModelFitter:
         """
         self.model.set_params(params)
 
-        while Lexpt.value <= cutoff:
-            unfinished_items = list(
-                filter(lambda x: x[1].success_count < x[1].success_threshold, trackers.items()))
-            if not unfinished_items:
-                break
-            move, tracker = copy.deepcopy(random.choice(unfinished_items))
-            process_delta_LL = 0
-            while tracker.success_count < tracker.success_threshold:
-                
-                best_move = self.model.predict(move.board)
-                success = best_move == move.move.board_position
-                tracker.attempt_count += 1
+        # tracking the global expected log-likelihood across all processes
+        # if it exceeds the cutoff, all processes should exit
+        while LOG_LIKELIHOOD.value <= cutoff:
 
-                process_delta_LL += tracker.delta_log_likelihood(success)
-                if (success):
+            # the trials that have not yet met the success threshold
+            incomplete_trials = [(move, tracker) for move, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
+            if not incomplete_trials: break
+            
+            # Select a random incomplete trial and make a deep copy of it
+            move, tracker = copy.deepcopy(random.choice(incomplete_trials))
+
+            # delta_log_likelihood accumulates the change in log-likelihood 
+            # while the process is running
+            delta_log_likelihood = 0
+
+            while tracker.success_count < tracker.success_threshold:
+                predicted_move = self.model.predict(move.board)
+                actual_move = move.move.board_position
+                
+                # if the prediction is correct
+                if (predicted_move == actual_move):
+                    delta_log_likelihood += tracker.record_success()
+
+                    # update the global trackers and log likelihood
                     with trackers.lock:
                         if tracker.success_count == trackers[move].success_count + 1:
                             trackers[move] = tracker
-                            Lexpt.value += process_delta_LL
+                            LOG_LIKELIHOOD.value += delta_log_likelihood
                     break
+                
+                # if the prediction is incorrect
                 else:
-                    # We may need to exit early. This implicitly signals all of the other processes as well.
-                    if Lexpt.value + process_delta_LL > cutoff:
+                    delta_log_likelihood += tracker.record_failure()
+
+                    # if the cutoff is met, we need to exit all processes
+                    if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
+                        # this signals to all other processes that the cutoff has been met
                         with trackers.lock:
-                            Lexpt.value += process_delta_LL
+                            LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
     def log_likelihood(self, params, trackers):
@@ -270,16 +280,16 @@ class ModelFitter:
         cutoff = n_trials * self.model.cutoff
         shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
 
-        global Lexpt
-        Lexpt.value = n_trials * self.model.expt_factor
+        global LOG_LIKELIHOOD
+        LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
 
-        global pool
-        results = [pool.apply_async(self.parallel_log_likelihood, (params, cutoff, shared_trackers,)) for i in range(self.num_workers)]
+        global POOL
+        results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, cutoff)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
         L_values = {}
         for move in shared_trackers:
-            L_values[move] = shared_trackers[move].L
+            L_values[move] = shared_trackers[move].log_likelihood
         return L_values
 
     def calculate_expected_counts(self, L_values, c):
@@ -315,7 +325,7 @@ class ModelFitter:
         Returns:
             A list of estimated L-values for the observed moves given the parameters.
         """
-        trackers = {move: SuccessFrequencyTracker(self.model.expt_factor) for move in moves}
+        trackers = {move: IBSTracker(self.model.expt_factor) for move in moves}
         l_values = [self.log_likelihood(params, trackers) for _ in tqdm(range(n_samples))]
         average_l_values = [np.mean([l_value[move] for l_value in l_values]) for move in tqdm(moves)]
         return np.array(average_l_values)
@@ -340,7 +350,7 @@ class ModelFitter:
         
         trackers = {}
         for count, move in [*zip(counts, moves)]:
-            trackers[move] = SuccessFrequencyTracker(self.model.expt_factor, success_threshold= count)
+            trackers[move] = IBSTracker(self.model.expt_factor, success_threshold= count)
 
         if self.random_sample:
             clamped_n_samples = min(self.n_samples, len(trackers))
@@ -408,25 +418,25 @@ class ModelFitter:
         params, loglik_train = self.fit_model(train)
         test_trackers = {}
         for move in test:
-            test_trackers[move] = SuccessFrequencyTracker(self.model.expt_factor)
+            test_trackers[move] = IBSTracker(self.model.expt_factor)
         loglik_test = list(self.log_likelihood(params, test_trackers).values())
         
         return params, loglik_train, loglik_test
 
 
 def initialize_thread(shared_value):
-    global Lexpt
-    Lexpt = shared_value
+    global LOG_LIKELIHOOD
+    LOG_LIKELIHOOD = shared_value
 
 def initialize_thread_pool(num_threads, manual_seed=None):
-    global Lexpt, pool
-    Lexpt = Value('d', 0)
-    pool = Pool(num_threads, initializer=initialize_thread, initargs=(Lexpt,))
+    global LOG_LIKELIHOOD, POOL
+    LOG_LIKELIHOOD = Value('d', 0)
+    POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
 
     if manual_seed is not None:
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
         print(f"Setting manual seed {manual_seed} for single-thread")
-        pool.starmap(set_thread_random_seeds, [(manual_seed, i) for i in range(num_threads)])
+        POOL.starmap(set_thread_random_seeds, [(manual_seed, i) for i in range(num_threads)])
 
 def set_thread_random_seeds(base_seed, thread_id):
     # Create a unique seed for each thread
@@ -566,9 +576,9 @@ def main():
         exit()
 
     set_start_method('spawn')
-    global pool, Lexpt
-    Lexpt = Value('d', 0)
-    pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
+    global POOL, LOG_LIKELIHOOD
+    LOG_LIKELIHOOD = Value('d', 0)
+    POOL = Pool(args.threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
     model_fitter = ModelFitter(DefaultModel(), random_sample=bool(
         args.random_sample), verbose=bool(args.verbose), threads=args.threads)
     start, end = 0, len(folds)
