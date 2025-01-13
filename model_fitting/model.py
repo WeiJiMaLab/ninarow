@@ -15,6 +15,7 @@ from pathlib import Path
 from tqdm import tqdm
 from parsers import *
 import pandas as pd
+import pickle
 
 
 class IBSTracker:
@@ -61,8 +62,7 @@ class IBSTracker:
     
     def __repr__(self):
         return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
-
-
+    
 
 class DefaultModel:
     """
@@ -173,14 +173,39 @@ class DefaultModel:
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
+    
+    def save(self, filename):
+        """
+        Save the model to a file using pickle.
 
-class ModelFitter:
+        Args:
+            filename: The name of the file to save the model to.
+        """
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(filename):
+        """
+        Load the model from a file using pickle.
+
+        Args:
+            filename: The name of the file to load the model from.
+        Returns:
+            The loaded model.
+        """
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+    
+    def __call__(self, board): 
+        return self.predict(board)
+
+class Fitter:
     """
     The main class for finding the best heuristic/search parameter
     fit for a given dataset.
     """
-
-    def __init__(self, model, random_sample=None, verbose=False, threads=16):
+    def __init__(self, model, threads=16, verbose = False):
         """
         Constructor.
 
@@ -193,102 +218,9 @@ class ModelFitter:
             threads: The number of threads to use when fitting.
         """
         self.model = model
-
-        if random_sample:
-            self.random_sample = True
-            self.n_samples = random_sample
-            if self.n_samples <= 1:
-                raise Exception("Sample count must be greater than one!")
-        else:
-            self.random_sample = False
-            self.n_samples = 0
-
         self.verbose = verbose
         self.num_workers = threads
-
-    def parallel_log_likelihood(self, params, trackers, cutoff):
-        """
-        The main parallelized portion of our workload. Takes a set of
-        heuristic parameters and a list of moves and runs the heuristic
-        against the list until the heuristic produces the expected number
-        of matches to the observed dataset. Modifies trackers in place.
-
-        Args:
-            params: The heuristic parameters to test.
-            cutoff: A stop-loss cutoff that will cause us to exit early if needed.
-            trackers: The list of moves that need to be evaluated by the heuristic.
-        """
-        self.model.set_params(params)
-
-        # tracking the global expected log-likelihood across all processes
-        # if it exceeds the cutoff, all processes should exit
-        while LOG_LIKELIHOOD.value <= cutoff:
-
-            # the trials that have not yet met the success threshold
-            incomplete_trials = [(move, tracker) for move, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
-            if not incomplete_trials: break
-            
-            # Select a random incomplete trial and make a deep copy of it
-            move, tracker = copy.deepcopy(random.choice(incomplete_trials))
-
-            # delta_log_likelihood accumulates the change in log-likelihood 
-            # while the process is running
-            delta_log_likelihood = 0
-
-            while tracker.success_count < tracker.success_threshold:
-                predicted_move = self.model.predict(move.board)
-                actual_move = move.move.board_position
-                
-                # if the prediction is correct
-                if (predicted_move == actual_move):
-                    delta_log_likelihood += tracker.record_success()
-
-                    # update the global trackers and log likelihood
-                    with trackers.lock:
-                        if tracker.success_count == trackers[move].success_count + 1:
-                            trackers[move] = tracker
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                    break
-                
-                # if the prediction is incorrect
-                else:
-                    delta_log_likelihood += tracker.record_failure()
-
-                    # if the cutoff is met, we need to exit all processes
-                    if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
-                        # this signals to all other processes that the cutoff has been met
-                        with trackers.lock:
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                        break
-
-    def log_likelihood(self, params, trackers):
-        """
-        Computes the log likelihood of the given set of parameters being the set that best fits
-        the observed data.
-
-        Args:
-            trackers: The observed data to be fitted to.
-            params: The parameters to evaluate.
-
-        Returns:
-            The log-likelihood of each observed move at each position given the set of parameters.
-        """
-        n_trials = len(trackers)
-
-        cutoff = n_trials * self.model.cutoff
-        shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
-
-        global LOG_LIKELIHOOD
-        LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
-
-        global POOL
-        results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, cutoff)) for i in range(self.num_workers)]
-        [result.get() for result in results]
-
-        L_values = {}
-        for move in shared_trackers:
-            L_values[move] = shared_trackers[move].log_likelihood
-        return L_values
+        self.iteration_count = 0
 
     def calculate_expected_counts(self, L_values, c):
         """
@@ -309,86 +241,147 @@ class ModelFitter:
         interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
         times = (c * interp1(p)) / np.mean(interp2(p))
         return np.vectorize(lambda x: max(x, 1))(np.round(times))
-
-    def estimate_l_values(self, moves, params, n_samples):
+    
+    @staticmethod
+    def check_dataframe(data): 
         """
-        Estimates an initial guess for the L-values of the observed moves, given a plausible set of
-        starting parameters. Averages over multiple samples.
+        Check that the data is in the correct format for fitting.
+        """
+        assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
+        assert 'black' in data.columns, "Data must have a 'black' column."
+        assert 'white' in data.columns, "Data must have a 'white' column."
+        assert 'move' in data.columns, "Data must have a 'move' column."
+        assert 'color' in data.columns, "Data must have a 'color' column."
+
+        for i, row in enumerate(data.itertuples()):
+            assert row.black >= 0, f"Row {i}: Black pieces must be a non-negative integer."
+            assert row.white >= 0, f"Row {i}: White pieces must be a non-negative integer."
+            assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
+            assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
+            assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
+            assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
+
+    def parallel_log_likelihood(self, params, trackers, cutoff):
+        """
+        The main parallelized portion of our workload. Takes a set of
+        heuristic parameters and a list of data and runs the heuristic
+        against the list until the heuristic produces the expected number
+        of matches to the observed dataset. Modifies trackers in place.
 
         Args:
-            moves: The set of observed moves.
+            params: The heuristic parameters to test.
+            cutoff: A stop-loss cutoff that will cause us to exit early if needed.
+            trackers: The list of data that need to be evaluated by the heuristic.
+        """
+        self.model.set_params(params)
+
+        # tracking the global expected log-likelihood across all processes
+        # if it exceeds the cutoff, all processes should exit
+        while LOG_LIKELIHOOD.value <= cutoff:
+
+            # filter for the trials that have not yet met the success threshold
+            incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
+            if not incomplete_trials: break
+            
+            # Select a random incomplete trial and make a deep copy of it
+            key, tracker = copy.deepcopy(random.choice(incomplete_trials))
+
+            # convert the key to a board state and move index
+            black_, white_, move_ = key
+            board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
+            actual_move = int(move_).bit_length() - 1
+
+            # delta_log_likelihood accumulates the change in log-likelihood 
+            # while the process is running
+            delta_log_likelihood = 0
+
+            while tracker.success_count < tracker.success_threshold:
+                predicted_move = self.model.predict(board)
+                
+                # if the prediction is correct
+                if (predicted_move == actual_move):
+                    delta_log_likelihood += tracker.record_success()
+
+                    # update the global trackers and log likelihood
+                    with trackers.lock:
+                        if tracker.success_count == trackers[key].success_count + 1:
+                            trackers[key] = tracker
+                            LOG_LIKELIHOOD.value += delta_log_likelihood
+                    break
+                
+                # if the prediction is incorrect
+                else:
+                    delta_log_likelihood += tracker.record_failure()
+
+                    # if the cutoff is met, we need to exit all processes
+                    if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
+                        # this signals to all other processes that the cutoff has been met
+                        with trackers.lock:
+                            LOG_LIKELIHOOD.value += delta_log_likelihood
+                        break
+
+    def log_likelihood(self, params, data, counts = None):
+        """
+        Computes the log likelihood of the given set of parameters being the set that best fits
+        the observed data.
+
+        Args:
+            trackers: The observed data to be fitted to.
             params: The parameters to evaluate.
-            n_samples: The number of samples to average over.
 
         Returns:
-            A list of estimated L-values for the observed moves given the parameters.
+            The log-likelihood of each observed move at each position given the set of parameters.
         """
-        trackers = {move: IBSTracker(self.model.expt_factor) for move in moves}
-        l_values = [self.log_likelihood(params, trackers) for _ in tqdm(range(n_samples))]
-        average_l_values = [np.mean([l_value[move] for l_value in l_values]) for move in tqdm(moves)]
-        return np.array(average_l_values)
+        # success threshold is set to 1 by default if not provided
+        # create IBSTrackers to keep track of successes and failures in predictions
 
-    def fit_model(self, moves,
-                  bads_options={
+        n_trials = len(data)
+        if counts is None: counts = np.ones(n_trials)
+        trackers = {(key.black, key.white, key.move): IBSTracker(self.model.expt_factor, success_threshold=count) for key, count in zip(data.itertuples(), counts)}
+        shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
+
+        global LOG_LIKELIHOOD
+        LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
+
+        global POOL
+        results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
+        [result.get() for result in results]
+
+        return np.array([shared_trackers[key].log_likelihood for key in shared_trackers])
+    
+    def optimize(self, x): 
+        log_likelihood = self.log_likelihood(x, self.data, self.counts).sum()
+        if self.verbose: print(f"\t[{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
+        self.iteration_count += 1
+        return log_likelihood
+
+    def fit(self, data, bads_options={
                     'uncertainty_handling': True,
                     'noise_final_samples': 0,
                     'max_fun_evals': 2000
                   }):
         """
-        Given a set of moves, find the set of heuristic/search parameters that best fit the observations.
+        Given a set of data, find the set of heuristic/search parameters that best fit the observations.
 
-        @params moves The set of moves to fit to.
+        @params data The set of data to fit to.
 
-        @return The set of parameters that best correspond to the given moves, as well as their corresponding L-values.
+        @return The set of parameters that best correspond to the given data, as well as their corresponding L-values.
         """
         print("[Preprocessing] Initial log-likelihood estimation")
-
-        average_l_values = self.estimate_l_values(moves, self.model.initial_params, 10)
-        counts = self.calculate_expected_counts(average_l_values, self.model.c).astype(int)
-        
-        trackers = {}
-        for count, move in [*zip(counts, moves)]:
-            trackers[move] = IBSTracker(self.model.expt_factor, success_threshold= count)
-
-        if self.random_sample:
-            clamped_n_samples = min(self.n_samples, len(trackers))
-
-            # If we're sampling, we need to make sure we're not trying to sample more than we have.
-            if clamped_n_samples != self.n_samples:
-                print(f"Warning: Sample count ({self.n_samples}) > dataset size ({len(trackers)})! Using full dataset...")
-
-        def opt_fun(x):
-            '''
-            The objective function for the BADS optimization process. Given a set of parameters, evaluate the log-likelihood
-            '''
-            if self.random_sample:
-                subsampled_keys = random.sample(
-                    sorted(trackers), clamped_n_samples)
-                subsampled_trackers = {k: trackers[k] for k in subsampled_keys}
-            else:
-                subsampled_trackers = trackers
-
-            log_likelihood = sum(list(self.log_likelihood(x, subsampled_trackers).values()))
-
-            if self.verbose:
-                print(
-                    f"[{opt_fun.current_iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
-                opt_fun.current_iteration_count += 1
-
-            return log_likelihood
-
-        opt_fun.current_iteration_count = 0
+        self.__class__.check_dataframe(data)
+        self.data = data
+        initial_LL = np.array([self.log_likelihood(self.model.initial_params, data) for _ in tqdm(range(10))]).mean(axis = 0)
+        self.counts = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
         # run PyBADS to optimize the initial parameter guesses
-        bads = BADS(opt_fun, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
-        
+        bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         out_params = bads.optimize()['x']
 
         print("[Fitted Parameters]: {}".format(out_params))
 
         print("[Postprocessing] Final log-likelihood estimation")
-        final_l_values = self.estimate_l_values(moves, out_params, 10)
-        return out_params, final_l_values
+        final_LL = np.array([self.log_likelihood(out_params, data) for _ in tqdm(range(10))]).mean(axis = 0)
+        return out_params, final_LL
 
     def cross_validate(self, folds, leave_out):
         """
@@ -396,12 +389,12 @@ class ModelFitter:
         fit against all of the folds but the i-th and evaluate the resultant fit on the i-th group.
 
         Args:
-            folds: A pre-split list of lists of moves corresponding to different validation folds.
+            folds: A pre-split list of lists of data corresponding to different validation folds.
             i: The group that should be held-out of the fitting process and tested against.
 
         Returns:
             The best-fit parameters for all of the folds but the ith, as well as the log-likelihood
-            of the moves from both the training (non-i) and test (i) sets.
+            of the data from both the training (non-i) and test (i) sets.
         """
 
         assert leave_out < len(folds), "Invalid leave-out index!"
@@ -419,13 +412,22 @@ class ModelFitter:
         loglik_test = list(self.log_likelihood(params, test_trackers).values())
         
         return params, loglik_train, loglik_test
+    
 
-
-def initialize_thread(shared_value):
-    global LOG_LIKELIHOOD
-    LOG_LIKELIHOOD = shared_value
 
 def initialize_thread_pool(num_threads, manual_seed=None):
+
+    def initialize_thread(shared_value):
+        # initialize the thread to some shared value
+        global LOG_LIKELIHOOD
+        LOG_LIKELIHOOD = shared_value
+
+    def set_seeds(base_seed, thread_id):
+        # Create a unique seed for each thread
+        thread_seed = base_seed + thread_id
+        random.seed(thread_seed)
+        print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
+    
     global LOG_LIKELIHOOD, POOL
     LOG_LIKELIHOOD = Value('d', 0)
     POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
@@ -433,13 +435,8 @@ def initialize_thread_pool(num_threads, manual_seed=None):
     if manual_seed is not None:
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
         print(f"Setting manual seed {manual_seed} for single-thread")
-        POOL.starmap(set_thread_random_seeds, [(manual_seed, i) for i in range(num_threads)])
+        POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
 
-def set_thread_random_seeds(base_seed, thread_id):
-    # Create a unique seed for each thread
-    thread_seed = base_seed + thread_id
-    random.seed(thread_seed)
-    print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
 
 
 def main():
@@ -468,7 +465,7 @@ def main():
     parser.add_argument(
         "-f",
         "--participant_file",
-        help="The file containing participant data to be split, i.e. a list of board states, moves, and associated timing. Optionally, a number of splits may be provided if cross-validation is desired.",
+        help="The file containing participant data to be split, i.e. a list of board states, data, and associated timing. Optionally, a number of splits may be provided if cross-validation is desired.",
         type=str,
         nargs='+',
         metavar=(
@@ -537,8 +534,8 @@ def main():
             raise Exception("-c cannot be used with -f!")
 
         # parse the participant file and generate splits
-        moves = parse_participant_file(args.participant_file[0])
-        folds = generate_splits(moves, num_splits)
+        data = parse_participant_file(args.participant_file[0])
+        folds = generate_splits(data, num_splits)
 
     # If the input directory is specified, read in the splits.
     elif args.input_dir:
@@ -551,8 +548,8 @@ def main():
             input_files.append(input_path / (str(i + 1) + ".csv"))
         for input_path in input_files:
             print("Ingesting split {}".format(input_path))
-            moves = parse_participant_file(input_path)
-            folds.append(moves)
+            data = parse_participant_file(input_path)
+            folds.append(data)
     else:
         raise Exception("Either -f or -i must be specified!")
 
