@@ -16,63 +16,57 @@ from tqdm import tqdm
 from parsers import *
 import pandas as pd
 import pickle
+from abc import ABC, abstractmethod
+    
 
-
-class IBSTracker:
+class Model(ABC):
     """
-    Tracks the number of times the heuristic has evaluated a given position to the expected evaluation. Used for
-    fitting the heuristic to a given dataset.
+    Abstract base class for models.
     """
 
-    def __init__(self, expt_factor, success_threshold = 1):
+    @abstractmethod
+    def set_params(self, params):
+        pass
+
+    @abstractmethod
+    def predict(self, board):
+        pass
+
+    def save(self, filename):
         """
-        Constructor.
+        Save the model to a file using pickle.
 
         Args:
-            expt_factor: Controls the fitting cutoff of the BADS process.
+        filename: The name of the file to save the model to.
         """
-        self.success_threshold = success_threshold
-        self.expt_factor = expt_factor
-        self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
 
-    def record_success(self):
+    @staticmethod
+    def load(filename):
         """
-        When the prediction is correct, record it and return the log likelihood diff
+        Load the model from a file using pickle.
+
+        Args:
+        filename: The name of the file to load the model from.
         Returns:
-            The change in log-likelihood.
+        The loaded model.
         """
-        scale_factor = self.expt_factor / self.success_threshold
-        self.success_count += 1
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
 
-        # reset the attempt count
-        self.attempt_count = 0
-        return -scale_factor
+    @abstractmethod
+    def __call__(self, board):
+        pass
 
-    def record_failure(self):
-        """
-        When a prediction is incorrect, record it and return the log likelihood diff
-        Returns:
-            The change in log-likelihood.
-        """
-        scale_factor = self.expt_factor / self.success_threshold
-        self.attempt_count += 1
-        delta = scale_factor * (1 / self.attempt_count)
-        self.log_likelihood += delta
-        return delta
-    
-    def __repr__(self):
-        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
-    
 
-class DefaultModel:
+class DefaultModel(Model):
     """
     The default model used by Bas.
     """
 
     def __init__(self):
-        """
-        Constructor.
-        """
+        super().__init__()
         self.expt_factor = 1.0
         self.cutoff = 3.5
         self.parameter_list = [{
@@ -174,38 +168,13 @@ class DefaultModel:
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
     
-    def save(self, filename):
-        """
-        Save the model to a file using pickle.
-
-        Args:
-            filename: The name of the file to save the model to.
-        """
-        with open(filename, 'wb') as f:
-            pickle.dump(self, f)
-
-    @staticmethod
-    def load(filename):
-        """
-        Load the model from a file using pickle.
-
-        Args:
-            filename: The name of the file to load the model from.
-        Returns:
-            The loaded model.
-        """
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-    
-    def __call__(self, board): 
-        return self.predict(board)
 
 class Fitter:
     """
     The main class for finding the best heuristic/search parameter
     fit for a given dataset.
     """
-    def __init__(self, model, threads=16, verbose = False):
+    def __init__(self, model: Model, threads=16, verbose = False):
         """
         Constructor.
 
@@ -222,57 +191,47 @@ class Fitter:
         self.num_workers = threads
         self.iteration_count = 0
 
-    def calculate_expected_counts(self, L_values, c):
+    def calculate_expected_counts(self, log_likelihoods, c):
         """
-        Generate the distribution of observation counts we should see for each move given that move's
-        L-values. Essentially, we're converting likelihoods to probabilities here.
+        Calculate the expected observation counts for each move based on their L-values.
 
-        Args:
-            L_values: A list of L-values corresponding to each move.
-            c: A scalar provided by the model.
+        This function converts log-likelihoods to probabilities and then determines the
+        expected number of times each move should be reproduced.
 
-        Returns:
-            A list of the number of times we would expect each move to be reproduced given the L-values.
+            log_likelihoods (list): A list of L-values corresponding to each move.
+            c (float): A scalar provided by the model.
+
+            list: A list of the expected number of times each move would be reproduced given the L-values.
         """
         x = np.linspace(1e-6, 1 - 1e-6, int(1e6))
         dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
-        p = np.exp(-L_values)
+        p = np.exp(-log_likelihoods)
         interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
         interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
         times = (c * interp1(p)) / np.mean(interp2(p))
         return np.vectorize(lambda x: max(x, 1))(np.round(times))
-    
-    @staticmethod
-    def check_dataframe(data): 
-        """
-        Check that the data is in the correct format for fitting.
-        """
-        assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
-        assert 'black' in data.columns, "Data must have a 'black' column."
-        assert 'white' in data.columns, "Data must have a 'white' column."
-        assert 'move' in data.columns, "Data must have a 'move' column."
-        assert 'color' in data.columns, "Data must have a 'color' column."
 
-        for i, row in enumerate(data.itertuples()):
-            assert row.black >= 0, f"Row {i}: Black pieces must be a non-negative integer."
-            assert row.white >= 0, f"Row {i}: White pieces must be a non-negative integer."
-            assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
-            assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
-            assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
-            assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
-
-    def parallel_log_likelihood(self, params, trackers, cutoff):
+    def parallel_log_likelihood(self, params, trackers: UltraDict, cutoff: float):
         """
-        The main parallelized portion of our workload. Takes a set of
-        heuristic parameters and a list of data and runs the heuristic
-        against the list until the heuristic produces the expected number
-        of matches to the observed dataset. Modifies trackers in place.
-
-        Args:
-            params: The heuristic parameters to test.
-            cutoff: A stop-loss cutoff that will cause us to exit early if needed.
-            trackers: The list of data that need to be evaluated by the heuristic.
+        Compute the log-likelihood of the model parameters in parallel.
+        This function runs a parallelized process to compute the log-likelihood of the model parameters.
+        It updates the global log-likelihood value and the trackers for each trial until the log-likelihood
+        exceeds the specified cutoff value.
+        Parameters:
+        -----------
+        params : array-like
+            The parameters to set for the model.
+        trackers : dict
+            A dictionary of trackers for each trial, where each key is a tuple representing the trial
+            and each value is a tracker object that keeps track of successes and failures.
+        cutoff : float
+            The cutoff value for the log-likelihood. Once the global log-likelihood exceeds this value,
+            all processes should exit.
+        Returns:
+        --------
+        None
         """
+        
         self.model.set_params(params)
 
         # tracking the global expected log-likelihood across all processes
@@ -320,23 +279,33 @@ class Fitter:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
-    def log_likelihood(self, params, data, counts = None):
+    def log_likelihood(self, params, data: pd.DataFrame, counts = None):
         """
-        Computes the log likelihood of the given set of parameters being the set that best fits
-        the observed data.
-
-        Args:
-            trackers: The observed data to be fitted to.
-            params: The parameters to evaluate.
-
+        Calculate the log likelihood of the model given the parameters and data.
+        Parameters:
+        -----------
+        params : array-like
+            The parameters of the model.
+        data : pd.DataFrame
+            The data to fit the model to. Each row represents a trial.
+        counts : array-like, optional
+            The counts for each trial. If None, defaults to an array of ones with the same length as the number of trials.
         Returns:
-            The log-likelihood of each observed move at each position given the set of parameters.
+        --------
+        np.ndarray
+            An array of log likelihood values for each tracker.
+        Notes:
+        ------
+        - This function uses parallel processing to speed up the computation of log likelihoods.
+        - The `shared_trackers` dictionary is used to store the IBSTracker instances for each trial.
+        - The `LOG_LIKELIHOOD` global variable is updated with the initial log likelihood value.
+        - The `POOL` global variable is used to manage the pool of worker processes.
         """
-        # success threshold is set to 1 by default if not provided
-        # create IBSTrackers to keep track of successes and failures in predictions
 
         n_trials = len(data)
         if counts is None: counts = np.ones(n_trials)
+
+        # initialize IBS trackers to keep track of successes and failures in model simulation
         trackers = {(key.black, key.white, key.move): IBSTracker(self.model.expt_factor, success_threshold=count) for key, count in zip(data.itertuples(), counts)}
         shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
 
@@ -354,68 +323,160 @@ class Fitter:
         if self.verbose: print(f"\t[{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
+    
+    def evaluate(self, params, data: pd.DataFrame, n_iters: 10, counts = None):
+        """
+        Evaluates the log-likelihood of the given parameters on the given data.
 
-    def fit(self, data, bads_options={
+        Args:
+        params: The parameters to evaluate.
+        data: The observed data to be fitted to.
+        counts: The number of times each move was observed in the data. If not provided, 
+                each move is assumed to have been observed once.
+        n_iters: The number of iterations to run the evaluation for.
+        """
+        return np.array([self.log_likelihood(params, data, counts) for _ in tqdm(range(n_iters))]).mean(axis = 0)
+
+
+    def fit(self, data: pd.DataFrame, bads_options={
                     'uncertainty_handling': True,
                     'noise_final_samples': 0,
                     'max_fun_evals': 2000
                   }):
         """
-        Given a set of data, find the set of heuristic/search parameters that best fit the observations.
-
-        @params data The set of data to fit to.
-
-        @return The set of parameters that best correspond to the given data, as well as their corresponding L-values.
+        Fits the model to the provided data using the BADS optimization algorithm.
+        Parameters:
+        data (pd.DataFrame): The input data to fit the model to.
+        bads_options (dict, optional): Options for the BADS optimizer. Defaults to:
+            {
+                'uncertainty_handling': True,
+                'noise_final_samples': 0,
+                'max_fun_evals': 2000
+            }
+        Returns:
+        tuple: A tuple containing:
+            - out_params (np.ndarray): The optimized parameters.
+            - final_LL (float): The final log-likelihood estimation on the training data
+        Notes:
+        - This method performs initial log-likelihood estimation, runs the BADS optimizer,
+            and then performs final log-likelihood estimation.
+        - The method prints the fitted parameters and log-likelihood estimations during the process.
         """
         print("[Preprocessing] Initial log-likelihood estimation")
+        # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
         self.data = data
-        initial_LL = np.array([self.log_likelihood(self.model.initial_params, data) for _ in tqdm(range(10))]).mean(axis = 0)
+
+        # calculate the expected counts for each move by estimating the 
+        # LL with the initial guess
+        initial_LL = self.evaluate(self.model.initial_params, data)
         self.counts = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
         # run PyBADS to optimize the initial parameter guesses
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
-        out_params = bads.optimize()['x']
+        fitted_params = bads.optimize()['x']
 
-        print("[Fitted Parameters]: {}".format(out_params))
+        print("[Fitted Parameters]: {}".format(fitted_params))
 
         print("[Postprocessing] Final log-likelihood estimation")
-        final_LL = np.array([self.log_likelihood(out_params, data) for _ in tqdm(range(10))]).mean(axis = 0)
-        return out_params, final_LL
-
-    def cross_validate(self, folds, leave_out):
+        final_LL = self.evaluate(fitted_params, data)
+        return fitted_params, final_LL
+    
+    @staticmethod
+    def check_dataframe(data): 
         """
-        Given a set of pre-split folds, cross validate the i-th group against the rest, i.e.,
-        fit against all of the folds but the i-th and evaluate the resultant fit on the i-th group.
+        Check that the data is in the correct format for fitting.
+        """
+        assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
+        assert 'black' in data.columns, "Data must have a 'black' column."
+        assert 'white' in data.columns, "Data must have a 'white' column."
+        assert 'move' in data.columns, "Data must have a 'move' column."
+        assert 'color' in data.columns, "Data must have a 'color' column."
+
+        for i, row in enumerate(data.itertuples()):
+            assert row.black >= 0, f"Row {i}: Black pieces must be a non-negative integer."
+            assert row.white >= 0, f"Row {i}: White pieces must be a non-negative integer."
+            assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
+            assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
+            assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
+            assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
+
+class IBSTracker:
+    """
+        A tracker for the Inverse Binomial Sampling (IBS) process, used to monitor and fit a heuristic to a given dataset.
+        The IBSTracker class keeps track of the number of successful and unsuccessful heuristic evaluations of a given 
+        position, and adjusts the log-likelihood based on these evaluations. It is particularly useful in scenarios where 
+        the heuristic needs to be iteratively fitted to improve its accuracy.
+        Attributes:
+            success_threshold (int): The threshold for considering a prediction as successful.
+            expt_factor (float): A factor controlling the fitting cutoff of the BADS (Bayesian Adaptive Direct Search) process.
+            attempt_count (int): The number of attempts made since the last success.
+            success_count (int): The total number of successful predictions.
+            log_likelihood (float): The cumulative log-likelihood of the heuristic's performance.
+        Methods:
+            record_success():
+                Records a successful prediction, resets the attempt count, and returns the change in log-likelihood.
+            record_failure():
+                Records an unsuccessful prediction, increments the attempt count, updates the log-likelihood, and returns 
+                the change in log-likelihood.
+            __repr__():
+                Returns a string representation of the current state of the tracker, including the number of successes, 
+                attempts, and the log-likelihood.
+    """
+    def __init__(self, expt_factor, success_threshold = 1):
+        """
+        Constructor.
 
         Args:
-            folds: A pre-split list of lists of data corresponding to different validation folds.
-            i: The group that should be held-out of the fitting process and tested against.
-
-        Returns:
-            The best-fit parameters for all of the folds but the ith, as well as the log-likelihood
-            of the data from both the training (non-i) and test (i) sets.
+            expt_factor: Controls the fitting cutoff of the BADS process.
         """
+        self.success_threshold = success_threshold
+        self.expt_factor = expt_factor
+        self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
 
-        assert leave_out < len(folds), "Invalid leave-out index!"
+    def record_success(self):
+        """
+        When the prediction is correct, record it and return the log likelihood diff
+        Returns:
+            The change in log-likelihood.
+        """
+        scale_factor = self.expt_factor / self.success_threshold
+        self.success_count += 1
 
-        print("Cross validating split {} against the other {} splits".format(
-            leave_out + 1, len(folds) - 1))
-        test = folds[leave_out]
-        train_folds = [fold for i, fold in enumerate(folds) if i != leave_out]
-        train = [move for fold in train_folds for move in fold]
+        # reset the attempt count
+        self.attempt_count = 0
+        return -scale_factor
 
-        params, loglik_train = self.fit_model(train)
-        test_trackers = {}
-        for move in test:
-            test_trackers[move] = IBSTracker(self.model.expt_factor)
-        loglik_test = list(self.log_likelihood(params, test_trackers).values())
-        
-        return params, loglik_train, loglik_test
+    def record_failure(self):
+        """
+        When a prediction is incorrect, record it and return the log likelihood diff
+        Returns:
+            The change in log-likelihood.
+        """
+        scale_factor = self.expt_factor / self.success_threshold
+        self.attempt_count += 1
+        delta = scale_factor * (1 / self.attempt_count)
+        self.log_likelihood += delta
+        return delta
     
+    def __repr__(self):
+        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
 
 
 def initialize_thread_pool(num_threads, manual_seed=None):
+    """
+    Initializes a thread pool with a specified number of threads and an optional manual seed.
+    Args:
+        num_threads (int): The number of threads to initialize in the pool.
+        manual_seed (int, optional): A manual seed for random number generation. 
+                                     This can only be used with a single thread. 
+                                     If more than one thread is specified, an assertion error will be raised.
+    Raises:
+        AssertionError: If `manual_seed` is provided and `num_threads` is greater than 1.
+    Notes:
+        - The function initializes a global variable `LOG_LIKELIHOOD` to be shared among threads.
+        - If `manual_seed` is provided, it sets a unique seed for the single thread and prints the seed information.
+    """
 
     def initialize_thread(shared_value):
         # initialize the thread to some shared value
@@ -439,156 +500,32 @@ def initialize_thread_pool(num_threads, manual_seed=None):
 
 
 
-def main():
-    # INPUT FILE FORMAT should be:
-    # black_pieces (binary),
-    # white_pieces (binary),
-    # player_color (Black/White),
-    # move (binary),
-    # response time (not used in fitting),
-    # [group_id] (optional),
-    # participant_id
-    # for more info, see parsers.py
+def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16):
+    """
+    Perform cross-validation on the given model using the specified folds.
 
-    random.seed()
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, epilog="""Example usages:
-    - Process a file named input.csv and save results to a folder named output/: 
-      model_fit.py -f input.csv -o output/
-    - Process a file, create 5 splits, and perform cross-validation: 
-      model_fit.py -f input.csv 5 -o output/
-    - Create 5 splits from a file and exit: 
-      model_fit.py -f input.csv 5 -s -o output/
-    - Load splits from the previous command and perform cross-validation: 
-      model_fit.py -i output/ 5 -o output/
-    - Load splits from the previous command, and only process/cross-validate a specific split (split 2, in this case) against the others: 
-      model_fit.py -i output/ 5 -o output/ -c 2""")
-    parser.add_argument(
-        "-f",
-        "--participant_file",
-        help="The file containing participant data to be split, i.e. a list of board states, data, and associated timing. Optionally, a number of splits may be provided if cross-validation is desired.",
-        type=str,
-        nargs='+',
-        metavar=(
-            'input_file',
-            'split_count'))
-    parser.add_argument(
-        "-i",
-        "--input_dir",
-        help="The directory containing the pre-split folds to parse and cross-validate, along with the expected number of splits to be parsed. These splits should be named [1-n].csv",
-        type=str,
-        nargs=2,
-        metavar=(
-            'input_dir',
-            'split_count'))
-    parser.add_argument(
-        "-o",
-        "--output_dir",
-        help="The directory to output results to.",
-        type=str,
-        default="./",
-        metavar=('output_dir'))
-    parser.add_argument(
-        "-s",
-        "--splits-only",
-        help="If specified, terminate after generating splits.",
-        action='store_true')
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        help="If specified, print extra debugging info.",
-        action='store_true')
-    parser.add_argument(
-        "-c",
-        "--cluster-mode",
-        nargs=1,
-        type=int,
-        help="If specified, only process a single split, specified by the number passed as an argument to this flag. The split is expected to be named [arg].csv. This split will then be cross-validated against the other splits in the folder specified by the -i flag. Cannot be used with the -f flag; pre-split a -f argument with -s if desired.",
-        metavar=('local_split'))
-    parser.add_argument(
-        "-r",
-        "--random-sample",
-        nargs=1,
-        type=int,
-        help="If specified, instead of testing each position on a BADS function evaluation, instead randomly sample up to N positions without replacement.",
-        metavar=('n_samples'))
-    parser.add_argument(
-        "-t",
-        "--threads",
-        type=int,
-        default=16,
-        help="The number of threads to use when fitting.")
-    args = parser.parse_args()
-    if args.participant_file and args.input_dir:
-        raise Exception("Can't specify both -f and -i!")
+    Parameters:
+    model (Model): The model to be cross-validated.
+    folds (list): A list of dataframes, each representing a fold of the data.
+    leave_out_idx (int): The index of the fold to be used as the test set.
+    threads (int, optional): The number of threads to use for fitting the model. Default is 16.
 
-    folds = []
+    Returns:
+    tuple: A tuple containing the fitted parameters, training log-likelihood, and test log-likelihood.
 
-    # If the participant file is specified, generate splits.
-    if args.participant_file:
-        num_splits = 1
-        if (len(args.participant_file) == 2):
-            num_splits = int(args.participant_file[1])
-        if (len(args.participant_file) > 2):
-            raise Exception("-f only takes up to 2 arguments!")
-        if (args.cluster_mode):
-            raise Exception("-c cannot be used with -f!")
+    Raises:
+    AssertionError: If leave_out_idx is not a valid index in folds.
+    """
+    assert leave_out_idx < len(folds), "Invalid leave-out index!"
 
-        # parse the participant file and generate splits
-        data = parse_participant_file(args.participant_file[0])
-        folds = generate_splits(data, num_splits)
+    print("Cross validating split {} against the other {} splits".format(leave_out_idx + 1, len(folds) - 1))
+    test = folds[leave_out_idx]
 
-    # If the input directory is specified, read in the splits.
-    elif args.input_dir:
-        # directory should be in the form
-        # participant/[1-n].csv
-        input_path = Path(args.input_dir[0])
-        num_splits = int(args.input_dir[1])
-        input_files = []
-        for i in range(num_splits):
-            input_files.append(input_path / (str(i + 1) + ".csv"))
-        for input_path in input_files:
-            print("Ingesting split {}".format(input_path))
-            data = parse_participant_file(input_path)
-            folds.append(data)
-    else:
-        raise Exception("Either -f or -i must be specified!")
+    # concatenate the dataframe of the folds
+    train = pd.concat([fold for i, fold in enumerate(folds) if i != leave_out_idx])
 
-    output_path = Path(args.output_dir)
-    if not output_path.is_dir():
-        output_path.mkdir()
+    fitter = Fitter(model, threads = threads, verbose = True)
+    params, trainLL = fitter.fit(train)
 
-    # Only output splits if we generated new ones to output.
-    if args.participant_file:
-        for i in range(len(folds)):
-            new_split_path = output_path / (str(i + 1) + ".csv")
-            print("Writing split {}".format(new_split_path))
-            with (new_split_path).open('w') as f:
-                for move in folds[i]:
-                    f.write(str(move) + "\n")
-
-    if args.splits_only:
-        exit()
-
-    set_start_method('spawn')
-    global POOL, LOG_LIKELIHOOD
-    LOG_LIKELIHOOD = Value('d', 0)
-    POOL = Pool(args.threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
-    model_fitter = ModelFitter(DefaultModel(), random_sample=bool(
-        args.random_sample), verbose=bool(args.verbose), threads=args.threads)
-    start, end = 0, len(folds)
-    if (args.cluster_mode):
-        start = args.cluster_mode[0] - 1
-        end = start + 1
-    for i in range(start, end):
-        params, loglik_train, loglik_test = model_fitter.cross_validate(
-            folds, i)
-        with (output_path / ("params" + str(i + 1) + ".csv")).open('w') as f:
-            f.write(','.join(str(x) for x in params))
-        with (output_path / ("lltrain" + str(i + 1) + ".csv")).open('w') as f:
-            f.write(','.join(str(x) for x in loglik_train))
-        with (output_path / ("lltest" + str(i + 1) + ".csv")).open('w') as f:
-            f.write(' '.join(str(x) for x in loglik_test) + '\n')
-
-
-if __name__ == "__main__":
-    main()
+    testLL = fitter.evaluate(params, test)
+    return params, trainLL, testLL

@@ -121,7 +121,7 @@ class DefaultModel:
                             5, 5, 5, 5], dtype=np.float64)
         self.plb = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
                              5, -5, -5, -5], dtype=np.float64)
-        self.c = 50
+        self.c = 50 # ask tyler about this
 
     def create_heuristic(self, params):
         """
