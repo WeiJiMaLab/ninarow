@@ -18,7 +18,6 @@ import pandas as pd
 import pickle
 from abc import ABC, abstractmethod
     
-
 class Model(ABC):
     """
     Abstract base class for models.
@@ -55,10 +54,8 @@ class Model(ABC):
         with open(filename, 'rb') as f:
             return pickle.load(f)
 
-    @abstractmethod
     def __call__(self, board):
-        pass
-
+        return self.predict(board)
 
 class DefaultModel(Model):
     """
@@ -166,9 +163,7 @@ class DefaultModel(Model):
         '''
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
-        return self.heuristic.get_best_move(search.get_tree()).board_position
-    
-
+        return self.heuristic.get_best_move(search.get_tree()).board_position    
 class Fitter:
     """
     The main class for finding the best heuristic/search parameter
@@ -246,7 +241,7 @@ class Fitter:
             key, tracker = copy.deepcopy(random.choice(incomplete_trials))
 
             # convert the key to a board state and move index
-            black_, white_, move_ = key
+            black_, white_, move_, _= key
             board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
             actual_move = int(move_).bit_length() - 1
 
@@ -306,7 +301,9 @@ class Fitter:
         if counts is None: counts = np.ones(n_trials)
 
         # initialize IBS trackers to keep track of successes and failures in model simulation
-        trackers = {(key.black, key.white, key.move): IBSTracker(self.model.expt_factor, success_threshold=count) for key, count in zip(data.itertuples(), counts)}
+        trackers = {(key.black, key.white, key.move, i): IBSTracker(self.model.expt_factor, success_threshold=count) for i, (key, count) in enumerate(zip(data.itertuples(), counts))}
+        assert(len(trackers)) == n_trials
+        
         shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
 
         global LOG_LIKELIHOOD
@@ -324,7 +321,7 @@ class Fitter:
         self.iteration_count += 1
         return log_likelihood
     
-    def evaluate(self, params, data: pd.DataFrame, n_iters: 10, counts = None):
+    def evaluate(self, params, data: pd.DataFrame, n_iters = 10, counts = None):
         """
         Evaluates the log-likelihood of the given parameters on the given data.
 
@@ -462,6 +459,17 @@ class IBSTracker:
     def __repr__(self):
         return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
 
+def initialize_thread(shared_value):
+    # initialize the thread to some shared value
+    global LOG_LIKELIHOOD
+    LOG_LIKELIHOOD = shared_value
+
+def set_seeds(base_seed, thread_id):
+    # Create a unique seed for each thread
+    thread_seed = base_seed + thread_id
+    random.seed(thread_seed)
+    print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
+    
 
 def initialize_thread_pool(num_threads, manual_seed=None):
     """
@@ -477,18 +485,6 @@ def initialize_thread_pool(num_threads, manual_seed=None):
         - The function initializes a global variable `LOG_LIKELIHOOD` to be shared among threads.
         - If `manual_seed` is provided, it sets a unique seed for the single thread and prints the seed information.
     """
-
-    def initialize_thread(shared_value):
-        # initialize the thread to some shared value
-        global LOG_LIKELIHOOD
-        LOG_LIKELIHOOD = shared_value
-
-    def set_seeds(base_seed, thread_id):
-        # Create a unique seed for each thread
-        thread_seed = base_seed + thread_id
-        random.seed(thread_seed)
-        print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
-    
     global LOG_LIKELIHOOD, POOL
     LOG_LIKELIHOOD = Value('d', 0)
     POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
@@ -497,8 +493,6 @@ def initialize_thread_pool(num_threads, manual_seed=None):
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
         print(f"Setting manual seed {manual_seed} for single-thread")
         POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
-
-
 
 def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16):
     """
@@ -521,9 +515,12 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
     print("Cross validating split {} against the other {} splits".format(leave_out_idx + 1, len(folds) - 1))
     test = folds[leave_out_idx]
 
-    # concatenate the dataframe of the folds
-    train = pd.concat([fold for i, fold in enumerate(folds) if i != leave_out_idx])
+    train = []
+    for j in range(len(folds)):
+        if leave_out_idx != j:
+            train.append(folds[j])
 
+    train = pd.concat(train)
     fitter = Fitter(model, threads = threads, verbose = True)
     params, trainLL = fitter.fit(train)
 

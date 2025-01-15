@@ -6,7 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
-#include <unordered_map>
+#include <boost/unordered_map.hpp>
 #include <boost/random/bernoulli_distribution.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/mersenne_twister.hpp>
@@ -294,7 +294,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
           "heuristic function.");
     }
     std::size_t i = 0;
-    stopping_thresh = params[i++];
+    stopping_thresh = params[i++]; 
     pruning_thresh = params[i++];
     gamma = params[i++];
     lapse_rate = params[i++];
@@ -449,9 +449,9 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     auto opponent_pieces = feature_evaluator.query_pieces(b, other_player);
     auto spaces = feature_evaluator.query_spaces(b);
 
-    std::unordered_map<typename Board::PatternT, typename Board::MoveT,
-                       typename Board::PatternHasherT>
-        candidate_moves;
+    boost::unordered_map<typename Board::PatternT, typename Board::MoveT,
+               typename Board::PatternHasherT>
+      candidate_moves;
     double deltaL = 0.0;
     for (const auto& feature : features) {
       if (!feature.enabled) continue;
@@ -545,8 +545,8 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
                                                       Player evalPlayer) {
     std::vector<typename Board::MoveT> candidates = get_moves(b, evalPlayer);
     std::size_t i = 1;
-    while (i < candidates.size() &&
-           abs(candidates[0].val - candidates[i].val) < pruning_thresh) {
+    while (i < candidates.size() && 
+            abs(candidates[0].val - candidates[i].val) < pruning_thresh) {
       ++i;
     }
     if (i < candidates.size())
@@ -605,6 +605,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
       throw std::logic_error(
           "Cannot start a search when a previous search is being executed!");
     search_in_progress = true;
+    restore_features();
     if (noise_enabled) remove_features();
   }
 
@@ -613,7 +614,6 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * features.
    */
   void complete_search() {
-    restore_features();
     search_in_progress = false;
   }
 

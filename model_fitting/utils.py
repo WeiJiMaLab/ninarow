@@ -83,7 +83,7 @@ def df_to_CSVMove(df, warn = True):
 
     # Print a warning if the optional columns are not present
     if warn: 
-        if 'reaction_time' not in df.columns: print("Warning: Column 'reaction_time' not found in DataFrame. Defaulting to 1.0 for all moves.")
+        if 'response_time' not in df.columns: print("Warning: Column 'response_time' not found in DataFrame. Defaulting to RANDOM for all moves.")
         if 'group_id' not in df.columns: print("Warning: Column 'group_id' not found in DataFrame. Defaulting to 1 for all moves.")
         if 'participant_id' not in df.columns: print("Warning: Column 'participant_id' not found in DataFrame. Defaulting to '1' for all moves.")
 
@@ -104,7 +104,7 @@ def df_to_CSVMove(df, warn = True):
         move_index = int(row.move).bit_length() - 1
         move = fourbynine_move(move_index, 0.0, color)
 
-        reaction_time = row.reaction_time if 'reaction_time' in row._fields else 1.0
+        reaction_time = row.response_time if 'response_time' in row._fields else np.random.random()
 
         group_id = row.group_id if 'group_id' in row._fields else 1
         participant_id = row.participant_id if 'participant_id' in row._fields else '1'
