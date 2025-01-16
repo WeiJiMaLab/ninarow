@@ -2,6 +2,7 @@ from functools import total_ordering
 from fourbynine import fourbynine_board, fourbynine_pattern, fourbynine_move, Player_Player1, Player_Player2, bool_to_player, player_to_string
 from ninarow_utilities import bads_parameters_to_model_parameters
 import json
+import uuid
 
 
 @total_ordering
@@ -68,15 +69,25 @@ class CSVMove:
                 parameters[3]), 0.0, board.active_player())
             time = float(parameters[4])
             if (len(parameters) == 6):
-                group_id = 1
                 participant_id = parameters[5]
-            else:
+                return CSVMove(board, move, time, 1, participant_id)
+            
+            elif (len(parameters) == 7):
                 group_id = int(parameters[5])
                 participant_id = parameters[6]
-            return CSVMove(board, move, time, group_id, participant_id)
+                return CSVMove(board, move, time, group_id, participant_id)
+            
+            elif (len(parameters) == 8):
+                group_id = int(parameters[5])
+                participant_id = parameters[6]
+                unique_id = parameters[7]
+                return CSVMove(board, move, time, group_id, participant_id, unique_id)
+            else: 
+                raise Exception(
+                    "Given input has incorrect number of parameters (expected 6 - 8): " + line)
         else:
             raise Exception(
-                "Given input has incorrect number of parameters (expected 6 or 7): " + line)
+                "Given input has incorrect number of parameters (expected at least 6): " + line)
 
     def __init__(
             self,
@@ -84,7 +95,8 @@ class CSVMove:
             move,
             time,
             group_id,
-            participant_id):
+            participant_id, 
+            unique_id = None):
         """
         Construct a move.
 
@@ -104,12 +116,18 @@ class CSVMove:
         self.group_id = int(group_id)
         self.participant_id = str(participant_id)
 
+        if unique_id is not None: 
+            self.unique_id = unique_id
+        else: 
+            # automatically generates a unique string identifier for the move
+            self.unique_id = str(uuid.uuid4())
+
     def __repr__(self):
         """
         Returns:
             A valid CSV string representing the given move.
         """
-        return "\t".join([str(int(self.board.get_pieces(Player_Player1).to_string(), 2)), str(int(self.board.get_pieces(Player_Player2).to_string(), 2)), player_to_string(self.player), str(2**self.move.board_position), str(self.time), str(self.group_id), self.participant_id])
+        return "\t".join([str(int(self.board.get_pieces(Player_Player1).to_string(), 2)), str(int(self.board.get_pieces(Player_Player2).to_string(), 2)), player_to_string(self.player), str(2**self.move.board_position), str(self.time), str(self.group_id), self.participant_id, self.unique_id])
 
     def __hash__(self):
         """
@@ -139,7 +157,7 @@ class CSVMove:
         self.__dict__ = new_state.__dict__
 
 
-def _parse_participant_csv(lines, group_id=1):
+def _parse_participant_csv(lines, group_id=1, ignore_csv_header = False):
     """
     Parses a list of CSV-encoded moves.
 
@@ -151,8 +169,13 @@ def _parse_participant_csv(lines, group_id=1):
         A list of CSVMove objects, one for each valid line passed in.
     """
     moves = []
-    for line in lines:
-        if line.isspace():
+    # read all the lines and convert them into CSVMove objects
+    for i, line in enumerate(lines):
+        # Skip the first line if we're ignoring the CSV header.
+        if i == 0 and ignore_csv_header:
+            continue
+        # Skip empty lines
+        if not line.strip():
             continue
         else:
             moves.append(CSVMove.create(line))
@@ -201,7 +224,7 @@ def _parse_participant_json(json_file, group_id=1, participant_id="1"):
     return moves
 
 
-def parse_participant_file(f, group_id=1, participant_id="1"):
+def parse_participant_file(f, group_id=1, participant_id="1", ignore_csv_header=False):
     """
     Parses a file by first attempting to parse it as a JSON file, and then falling back to a CSV file.
 
@@ -209,6 +232,7 @@ def parse_participant_file(f, group_id=1, participant_id="1"):
         f: The path to the file to parse.
         group_id: The group ID to assign to all games in this file. If the file is a CSV file, ignored if the CSV contains group information.
         participant_id: The name of the participant for all games in this file. Ignored if the file is a CSV file.
+        ignore_csv_header: If True, the first line of the CSV file will be ignored.
     """
     with open(f, 'r') as lines:
         try:
@@ -217,7 +241,7 @@ def parse_participant_file(f, group_id=1, participant_id="1"):
             print(
                 "File is either not a JSON file, or is malformed. Attempting to parse as a CSV...")
             lines.seek(0)
-        return _parse_participant_csv(lines, group_id)
+        return _parse_participant_csv(lines, group_id, ignore_csv_header)
 
 
 def parse_bads_parameter_file_to_model_parameters(f):

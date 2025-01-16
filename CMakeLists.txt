@@ -36,6 +36,12 @@ FetchContent_MakeAvailable(Eigen)
 find_package(SWIG REQUIRED)
 find_package(PythonLibs REQUIRED)
 
+# Find Boost library
+find_package(Boost REQUIRED)
+
+# Add Boost include directories
+include_directories(${Boost_INCLUDE_DIRS})
+
 include(${SWIG_USE_FILE})
 set(CMAKE_SWIG_FLAGS "")
 include_directories(${PYTHON_INCLUDE_DIRS})
@@ -67,13 +73,18 @@ gtest_discover_tests(tests)
 SET_SOURCE_FILES_PROPERTIES(fourbynine.i PROPERTIES CPLUSPLUS ON)
 SWIG_ADD_LIBRARY(swig_fourbynine TYPE SHARED LANGUAGE python OUTPUT_DIR "../model_fitting" OUTFILE_DIR "./" SOURCES fourbynine.i)
 set_property(TARGET swig_fourbynine PROPERTY SWIG_USE_TARGET_INCLUDE_DIRECTORIES TRUE)
-
+ 
 include(CheckTypeSize)
 
+# Check the size of size_t
 check_type_size("size_t" SIZE_T_SIZE)
-IF (NOT SIZE_T_SIZE EQUAL 8)
-  target_compile_definitions(swig_fourbynine PRIVATE SWIGWORDSIZE64)
-ENDIF()
+message(STATUS "Detected size_t size: ${SIZE_T_SIZE}")
+
+# Define SWIGWORDSIZE64 if size_t is not 8 bytes
+if (NOT SIZE_T_SIZE EQUAL 8)
+    target_compile_definitions(swig_fourbynine PRIVATE SWIGWORDSIZE64)
+endif()
+
 
 IF (NOT WIN32)
   set_target_properties(swig_fourbynine PROPERTIES SUFFIX ".so")

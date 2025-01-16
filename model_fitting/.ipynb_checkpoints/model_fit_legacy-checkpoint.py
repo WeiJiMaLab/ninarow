@@ -301,9 +301,6 @@ class ModelFitter:
         move_tasks = {}
         for move in moves:
             move_tasks[move] = SuccessFrequencyTracker(self.model.expt_factor)
-
-        assert len(move_tasks) == len(moves), "Error - duplicate moves in dataset! Resolve by setting a unique identifier for each move in the reaction time column"
-
         l_values = []
         for i in tqdm(range(sample_count)):
             l_values.append(self.compute_loglik(
@@ -336,8 +333,6 @@ class ModelFitter:
         for i in range(len(counts)):
             move_tasks[moves[i]].required_success_count = int(counts[i])
 
-        assert len(move_tasks) == len(moves), "Error - duplicate moves in dataset! Resolve by setting a unique identifier for each move in the reaction time column"
-
         if self.random_sample:
             clamped_sample_count = min(self.sample_count, len(move_tasks))
             if clamped_sample_count != self.sample_count:
@@ -345,17 +340,20 @@ class ModelFitter:
                     self.sample_count, len(move_tasks)))
 
         def opt_fun(x):
+            if self.verbose:
+                print("Probing function at theta = {}".format(x))
+                print("Current iteration: {}".format(
+                    opt_fun.current_iteration_count))
+                opt_fun.current_iteration_count += 1
             if self.random_sample:
                 subsampled_keys = random.sample(
                     sorted(move_tasks), clamped_sample_count)
                 subsampled_tasks = {k: move_tasks[k] for k in subsampled_keys}
             else:
                 subsampled_tasks = move_tasks
-            
+
             loglik = sum(list(self.compute_loglik(subsampled_tasks, x).values()))
-            if self.verbose:
-                print(f"\t[{opt_fun.current_iteration_count}] NLL: {np.round(loglik, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
-                opt_fun.current_iteration_count += 1
+            print(loglik)
             return loglik
 
         opt_fun.current_iteration_count = 0
@@ -401,25 +399,19 @@ class ModelFitter:
         loglik_test = list(self.compute_loglik(test_tasks, params).values())
         return params, loglik_train, loglik_test
 
+
 def initialize_thread(shared_value):
     global Lexpt
     Lexpt = shared_value
 
-def initialize_thread_pool(num_threads, manual_seed=None):
-    global Lexpt, pool
-    Lexpt = Value('d', 0)
-    pool = Pool(num_threads, initializer=initialize_thread, initargs=(Lexpt,))
-
-    if manual_seed is not None:
-        assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
-        print(f"Setting manual seed {manual_seed} for single-thread")
-        pool.starmap(set_thread_random_seeds, [(manual_seed, i) for i in range(num_threads)])
-
+# setting the random seeds
 def set_thread_random_seeds(base_seed, thread_id):
     # Create a unique seed for each thread
     thread_seed = base_seed + thread_id
     random.seed(thread_seed)
     print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
+
+
 
 def main():
     random.seed()
@@ -484,11 +476,6 @@ Read in splits from the above command, and only process/cross validate a single 
         type=int,
         default=16,
         help="The number of threads to use when fitting.")
-    parser.add_argument(
-        "-m",
-        "--manual-seed",
-        type=int,
-        help="If specified, sets a manual seed for the random number generator. This is useful for debugging purposes.")
     args = parser.parse_args()
     if args.participant_file and args.input_dir:
         raise Exception("Can't specify both -f and -i!")
@@ -532,20 +519,14 @@ Read in splits from the above command, and only process/cross validate a single 
 
     if args.splits_only:
         exit()
-
+    
     set_start_method('spawn')
     global pool, Lexpt
-
-    if args.manual_seed is not None:
-        # set random seed
-        random.seed(args.manual_seed)
-        initialize_thread_pool(1, manual_seed = args.manual_seed)
-    else:
-        Lexpt = Value('d', 0)
-        pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
-
+    Lexpt = Value('d', 0)
+    pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
+    pool.starmap(set_thread_random_seeds, [(10, i) for i in range(args.threads)])
+    
     model_fitter = ModelFitter(DefaultModel(), args)
-
     start, end = 0, len(groups)
     if (args.cluster_mode):
         start = args.cluster_mode[0] - 1
