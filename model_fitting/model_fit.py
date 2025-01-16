@@ -484,6 +484,11 @@ Read in splits from the above command, and only process/cross validate a single 
         type=int,
         default=16,
         help="The number of threads to use when fitting.")
+    parser.add_argument(
+        "-m",
+        "--manual-seed",
+        type=int,
+        help="If specified, sets a manual seed for the random number generator. This is useful for debugging purposes.")
     args = parser.parse_args()
     if args.participant_file and args.input_dir:
         raise Exception("Can't specify both -f and -i!")
@@ -530,9 +535,17 @@ Read in splits from the above command, and only process/cross validate a single 
 
     set_start_method('spawn')
     global pool, Lexpt
-    Lexpt = Value('d', 0)
-    pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
+
+    if args.manual_seed is not None:
+        # set random seed
+        random.seed(args.manual_seed)
+        initialize_thread_pool(1, manual_seed = args.manual_seed)
+    else:
+        Lexpt = Value('d', 0)
+        pool = Pool(args.threads, initializer=initialize_thread, initargs=(Lexpt,))
+
     model_fitter = ModelFitter(DefaultModel(), args)
+
     start, end = 0, len(groups)
     if (args.cluster_mode):
         start = args.cluster_mode[0] - 1
