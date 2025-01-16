@@ -1,44 +1,37 @@
 # Authorial Credit
-Please note that this is a rewrite of Bas van Opheusden's [Four-in-a-row implementation](https://github.com/basvanopheusden/fourinarow). Consider him the author of this code for citation purposes.
+
+This is a rewrite of Bas van Opheusden's [Four-in-a-row implementation](https://github.com/basvanopheusden/fourinarow). Please consider him the author of this code for citation purposes.
+
+This repository was written for compatibility with Python 3.10+ by Tyler Seip and is actively maintained by the members of Wei Ji Ma Lab.
 
 # Dependencies
-This repository requires Python 3 to be installed on your machine.
 
-The build system used by this repo is cmake:
-sudo apt-get install cmake
+This repository requires Python 3.10 or higher.
+On Mac, please ensure that pip is properly installed by running `pip --version`.
 
-Additionally, this repo requires SWIG to build:
-sudo apt-get install swig 
+**We strongly recommend that you run this in a virtual environment to prevent dependency errors**
+`python3 -m venv n-in-a-row`
 
-If on Windows, install cmake using the Windows installer, and then download and unzip SWIG to a directory. Add the following environment variables for all users:
+To build and stall the required packages, run the bash script at `build.sh`. 
+Note that you may need to first make sure you can execute it: `chmod 700 autobuild.sh`.
 
-SWIG_DIR \<path to unzipped SWIG directory\>
+```sh
+./autobuild.sh
+```
+The script will build a folder called `build` which contains the necessary SWIG modules.
+It will also automatically prompt you to run tests and install the needed Python packages. 
+If anything fails, you can always install and test manually following the instructions in 
+`legacy/README.md`.
 
-SWIG_EXECUTABLE \<path to swig.exe in unzipped SWIG directory\>
+To fit a model, from the `model_fitting` directory run:
+```sh
+python model_fit.py <path_to_game_csv>
+```
 
-Finally, add the swig directory (SWIG_DIR above) to your PATH system variable.
+# Commit Instructions
 
-# Four-in-a-row build instructions
-From a fresh checkout, create a build directory:  
-mkdir build  
-
-Then from the build directory (cd build):  
-cmake ..  
-cmake --build .  
-Note, if on Windows, depending on your Python installation options, you may not have the debug Python libraries installed. If this is the case, specify the Release build at build-time:
-cmake --build . --config Release
-
-To run tests, simply execute ./tests in the build output.  
-
-To install the required Python packages, from the model_fitting directory run:  
-pip install -r requirements.txt  
-
-To fit a model, from the model_fitting directory run:
-python model_fit.py <path_to_game_csv>  
-
-# Commit instructions
-Contributors should try to run utils/precommit.sh from the utils/ directory before committing.
-The dependencies for this script are documented in the script itself.
+Contributors should run `utils/precommit.sh` from the `utils/` directory before committing. The dependencies for this script are documented in the script itself.
 
 # Documentation
-Documentation can be found at https://weijimalab.github.io/ninarow/
+
+Documentation can be found at [https://weijimalab.github.io/ninarow/](https://weijimalab.github.io/ninarow/)

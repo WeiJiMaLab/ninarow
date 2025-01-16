@@ -50,9 +50,6 @@ class AbstractSearch {
    * Destructor.
    */
   virtual ~AbstractSearch() {
-    if (heuristic) {
-      heuristic->complete_search();
-    }
   }
 
   /**
@@ -111,7 +108,7 @@ class Search : public AbstractSearch<Heuristic> {
       const std::vector<typename Heuristic::BoardT::MoveT> candidate_moves =
           this->heuristic->get_pruned_moves(current_board,
                                             current_board.active_player());
-      current_node->expand(candidate_moves);
+      current_node->expand(candidate_moves); 
       on_node_expansion(current_node, this->heuristic, this->board);
       return false;
     }
