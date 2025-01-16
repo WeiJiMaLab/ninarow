@@ -164,7 +164,8 @@ class DefaultModel(Model):
         '''
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
-        return self.heuristic.get_best_move(search.get_tree()).board_position    
+        return self.heuristic.get_best_move(search.get_tree()).board_position
+        
 class Fitter:
     """
     The main class for finding the best heuristic/search parameter
@@ -527,3 +528,36 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
 
     testLL = fitter.evaluate(params, test)
     return params, trainLL, testLL
+
+
+
+
+import os
+def main(): 
+    # code to test the consistency of the model fitting
+    data_path = "../data"
+    output_path = "../data/out"
+    n_splits = 5
+    fold_number = 1
+    threads = 1
+    random_sample = False
+    verbose = True
+
+    print(f"Building output directory at {output_path}")
+    os.makedirs(output_path, exist_ok = True)
+
+    # first, we have to check to see if all the splits are there ...
+    assert np.all([f"{i + 1}.csv" in os.listdir(data_path) for i in range(n_splits)])
+    print("Detected splits in this directory. Loading splits ...")
+
+    # then we read them in
+    splits = [pd.read_csv(f"{data_path}/{i + 1}.csv") for i in range(n_splits)]
+
+    random.seed(10)
+    initialize_thread_pool(1, manual_seed = 10)
+
+    q = cross_validate(DefaultModel(), splits, leave_out_idx = 1, threads = 1)
+
+
+if __name__ == "__main__":
+    main()
