@@ -50,9 +50,6 @@ class AbstractSearch {
    * Destructor.
    */
   virtual ~AbstractSearch() {
-    if (this->heuristic) {
-      this->heuristic->complete_search();
-    }
   }
 
   /**

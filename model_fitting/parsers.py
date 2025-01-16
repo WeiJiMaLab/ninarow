@@ -2,6 +2,7 @@ from functools import total_ordering
 from fourbynine import fourbynine_board, fourbynine_pattern, fourbynine_move, Player_Player1, Player_Player2, bool_to_player, player_to_string
 from ninarow_utilities import bads_parameters_to_model_parameters
 import json
+import uuid
 
 
 @total_ordering
@@ -68,15 +69,25 @@ class CSVMove:
                 parameters[3]), 0.0, board.active_player())
             time = float(parameters[4])
             if (len(parameters) == 6):
-                group_id = 1
                 participant_id = parameters[5]
-            else:
+                return CSVMove(board, move, time, 1, participant_id)
+            
+            elif (len(parameters) == 7):
                 group_id = int(parameters[5])
                 participant_id = parameters[6]
-            return CSVMove(board, move, time, group_id, participant_id)
+                return CSVMove(board, move, time, group_id, participant_id)
+            
+            elif (len(parameters) == 8):
+                group_id = int(parameters[5])
+                participant_id = parameters[6]
+                unique_id = parameters[7]
+                return CSVMove(board, move, time, group_id, participant_id, unique_id)
+            else: 
+                raise Exception(
+                    "Given input has incorrect number of parameters (expected 6 - 8): " + line)
         else:
             raise Exception(
-                "Given input has incorrect number of parameters (expected 6 or 7): " + line)
+                "Given input has incorrect number of parameters (expected at least 6): " + line)
 
     def __init__(
             self,
@@ -84,7 +95,8 @@ class CSVMove:
             move,
             time,
             group_id,
-            participant_id):
+            participant_id, 
+            unique_id = None):
         """
         Construct a move.
 
@@ -104,12 +116,18 @@ class CSVMove:
         self.group_id = int(group_id)
         self.participant_id = str(participant_id)
 
+        if unique_id is not None: 
+            self.unique_id = unique_id
+        else: 
+            # automatically generates a unique string identifier for the move
+            self.unique_id = str(uuid.uuid4())
+
     def __repr__(self):
         """
         Returns:
             A valid CSV string representing the given move.
         """
-        return "\t".join([str(int(self.board.get_pieces(Player_Player1).to_string(), 2)), str(int(self.board.get_pieces(Player_Player2).to_string(), 2)), player_to_string(self.player), str(2**self.move.board_position), str(self.time), str(self.group_id), self.participant_id])
+        return "\t".join([str(int(self.board.get_pieces(Player_Player1).to_string(), 2)), str(int(self.board.get_pieces(Player_Player2).to_string(), 2)), player_to_string(self.player), str(2**self.move.board_position), str(self.time), str(self.group_id), self.participant_id, self.unique_id])
 
     def __hash__(self):
         """

@@ -17,6 +17,7 @@ from parsers import *
 import pandas as pd
 import pickle
 from abc import ABC, abstractmethod
+import uuid
     
 class Model(ABC):
     """
@@ -301,9 +302,9 @@ class Fitter:
         if counts is None: counts = np.ones(n_trials)
 
         # initialize IBS trackers to keep track of successes and failures in model simulation
-        trackers = {(key.black, key.white, key.move, i): IBSTracker(self.model.expt_factor, success_threshold=count) for i, (key, count) in enumerate(zip(data.itertuples(), counts))}
+        trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=count) for key, count in zip(data.itertuples(), counts)}
         assert(len(trackers)) == n_trials
-        
+
         shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
 
         global LOG_LIKELIHOOD

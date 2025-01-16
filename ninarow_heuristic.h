@@ -331,7 +331,20 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   void print_rng_state() const {
     std::ostringstream state_stream;
     state_stream << engine; // Serialize the engine state into the stream
-    std::cout << "RNG state: " << state_stream.str() << std::endl;
+    std::string state_str = state_stream.str();
+    std::istringstream iss(state_str);
+    uint32_t first_int;
+    iss >> first_int;
+    std::cout << "First integer of RNG state: " << first_int << ", "
+          << "Stopping threshold: " << stopping_thresh << ", "
+          << "Pruning threshold: " << pruning_thresh << ", "
+          << "Gamma: " << gamma << ", "
+          << "Lapse rate: " << lapse_rate << ", "
+          << "Opp scale: " << opp_scale << ", "
+          << "Exploration constant: " << exploration_constant << ", "
+          << "Center weight: " << center_weight << ", "
+          << "Noise enabled: " << noise_enabled << ", "
+          << "Search in progress: " << search_in_progress << std::endl;
   }
 
   /**
