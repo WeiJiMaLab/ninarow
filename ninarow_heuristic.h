@@ -614,10 +614,10 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * `drop_rate`s.
    */
   void start_search() {
-    if (search_in_progress)
+    if (this->search_in_progress)
       throw std::logic_error(
           "Cannot start a search when a previous search is being executed!");
-    search_in_progress = true;
+    this->search_in_progress = true;
     restore_features();
     if (noise_enabled) remove_features();
   }

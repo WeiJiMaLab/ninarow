@@ -27,7 +27,7 @@ case $env in
 
         echo "To install Boost on Windows:"
         echo "- Download Boost from https://www.boost.org/ and extract it (e.g., C:\\Boost)."
-        echo "- Add an environment variable BOOST_DIR pointing to the Boost directory (e.g., C:\\Boost)."
+        echo "- Add an environment variable BOOST_ROOT pointing to the Boost directory (e.g., C:\\Boost)."
         echo "- Add the Boost 'lib' directory (e.g., C:\\Boost\\lib) to your PATH."
         echo "CMake will detect Boost automatically if BOOST_DIR is set correctly."
         ;;
