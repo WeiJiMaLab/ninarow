@@ -6,3 +6,6 @@ model_fitting/fourbynine.py
 .cproject
 data/*
 .venv/*
+*/logs/
+*/.ipynb_checkpoints/
+*
