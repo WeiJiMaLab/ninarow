@@ -46,10 +46,15 @@ class AbstractSearch {
     }
   }
 
+  
   /**
    * Destructor.
    */
   virtual ~AbstractSearch() {
+    // known issues with garbage cleanup wrt swig
+    if (this->heuristic) {
+      this->heuristic->complete_search();
+    }
   }
 
   /**

@@ -216,6 +216,7 @@ class ModelFitter:
             move, task = copy.deepcopy(random.choice(unfinished_items))
             local_Lexpt_delta = 0
             while not move_tasks[move].is_done():
+                search = None #flush search
                 search = self.model.create_search(
                     params, heuristic, move.board)
                 search.complete_search()
