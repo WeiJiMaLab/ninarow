@@ -18,6 +18,7 @@ import pandas as pd
 import pickle
 from abc import ABC, abstractmethod
 import uuid
+from time import time
     
 class Model(ABC):
     """
@@ -187,6 +188,7 @@ class Fitter:
         self.verbose = verbose
         self.num_workers = threads
         self.iteration_count = 0
+        self.time = time()
 
     def calculate_expected_counts(self, log_likelihoods, c):
         """
@@ -298,7 +300,7 @@ class Fitter:
         - The `LOG_LIKELIHOOD` global variable is updated with the initial log likelihood value.
         - The `POOL` global variable is used to manage the pool of worker processes.
         """
-
+        tick = time()
         n_trials = len(data)
         if counts is None: counts = np.ones(n_trials)
 
@@ -315,6 +317,7 @@ class Fitter:
         results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
+        print(f"\tTime taken: {time() - self.time} since Start, {time() - tick} since Loop")        
         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers])
     
     def optimize(self, x): 
@@ -362,6 +365,7 @@ class Fitter:
         - The method prints the fitted parameters and log-likelihood estimations during the process.
         """
         print("[Preprocessing] Initial log-likelihood estimation")
+        self.time = time()
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
         self.data = data
