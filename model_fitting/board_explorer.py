@@ -247,6 +247,7 @@ class BoardDisplay(QWidget):
         self.update_heuristic_parameters()
 
     def create_search(self, heuristic, board):
+        self.heuristic.complete_search()
         return NInARowBestFirstSearch(heuristic, board)
 
     def onclick(self, event):
