@@ -14,7 +14,7 @@ from pybads import BADS
 from pathlib import Path
 from tqdm import tqdm
 from parsers import *
-
+from time import time
 
 class SuccessFrequencyTracker:
     """
@@ -189,6 +189,7 @@ class ModelFitter:
             self.sample_count = 0
         self.verbose = args.verbose
         self.num_workers = args.threads
+        self.time = time()
 
     def estimate_log_lik_ibs(
             self,
@@ -248,6 +249,7 @@ class ModelFitter:
         Returns:
             The log-likelihood of each observed move at each position given the set of parameters.
         """
+        tick = time()
         N = len(move_tasks)
 
         cutoff = N * self.model.cutoff
@@ -261,6 +263,7 @@ class ModelFitter:
             self.estimate_log_lik_ibs, (params, cutoff, shared_tasks,)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
+        print(f"\tTime taken: {time() - self.time} since Start, {time() - tick} since Loop")        
         L_values = {}
         for move in shared_tasks:
             L_values[move] = shared_tasks[move].L
@@ -327,6 +330,7 @@ class ModelFitter:
         @return The set of parameters that best correspond to the given moves, as well as their corresponding L-values.
         """
         print("Beginning model fit pre-processing: log-likelihood estimation")
+        self.time = time()
         average_l_values = self.model.estimate_initial_l_value_guess(
             self, moves)
         counts = self.generate_attempt_counts(
