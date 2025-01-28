@@ -25,8 +25,19 @@ def move_to_csv_string(board, move, time, group_id, participant):
     return "\t".join([board_to_base10_str(board.get_pieces(bool_to_player(False))), board_to_base10_str(board.get_pieces(bool_to_player(True))), player_to_string(move.player), str(2**move.board_position), str(time), str(group_id), str(participant)]) + "\n"
 
 
-def create_feature(white_pieces, black_pieces, min_occupancy):
-    return fourbynine_heuristic_feature(fourbynine_pattern(white_pieces), fourbynine_pattern(black_pieces), min_occupancy)
+def create_feature(pieces, empty, min_empty):
+    """
+    Create a heuristic feature.
+
+    Args:
+        pieces (int): Bitboard representing the pieces.
+        empty (int): Bitboard representing the empty spaces.
+        min_empty (int): Minimum number of empty spaces required.
+
+    Returns:
+        fourbynine_heuristic_feature: The created heuristic feature.
+    """
+    return fourbynine_heuristic_feature(fourbynine_pattern(pieces), fourbynine_pattern(empty), min_empty)
 
 
 def create_custom_heuristic():
