@@ -62,7 +62,16 @@ typedef unsigned long int size_t;
 %include "player.h"
 %include "searches.h"
 
-// Instantiate some templates
+/**
+ * @file fourbynine.i
+ * @brief This file contains the instantiation of some templates.
+ *
+ * Templates in C++ are a powerful feature that allows functions and classes to operate with generic types.
+ * This means you can write a function or a class that works with any data type.
+ * 
+ * For example, you can create a template for a function that adds two numbers, and this function can then be used 
+ * to add integers, floating-point numbers, or any other data type that supports the addition operation.
+ */
 
 %template(fourbynine_board) NInARow::Board<4, 9, 4>;
 %template(fourbynine_move) NInARow::Move<4, 9, 4>;
@@ -93,4 +102,3 @@ namespace std {
 
 %feature("director") NInARowBestFirstSearch;
 %template(NInARowBestFirstSearch) NInARow::NInARowBestFirstSearch<NInARow::Heuristic<NInARow::Board<4, 9, 4>>>;
-
