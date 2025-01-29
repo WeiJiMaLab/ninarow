@@ -123,6 +123,7 @@ struct HeuristicFeatureWithMetadata {
         enabled(true) {}
 };
 
+
 /**
  * A heuristic for games of n-in-a-row.
  *
@@ -462,28 +463,23 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     auto opponent_pieces = feature_evaluator.query_pieces(b, other_player);
     auto spaces = feature_evaluator.query_spaces(b);
 
-    boost::unordered_map<typename Board::PatternT, typename Board::MoveT,
-               typename Board::PatternHasherT>
-      candidate_moves;
+    boost::unordered_map<typename Board::PatternT, typename Board::MoveT, typename Board::PatternHasherT> candidate_moves;
     double deltaL = 0.0;
+    
+    // for feature in features, if feature is enabled, check if the feature is contained in player_pieces or opponent_pieces
     for (const auto& feature : features) {
       if (!feature.enabled) continue;
       const auto i = feature.vector_index;
       if (feature.feature.contained_in(player_pieces[i], spaces[i])) {
-        deltaL -= c_pass *
-                  feature_group_weights[feature.weight_index].diff_act_pass();
-      } else if (feature.feature.contained_in(opponent_pieces[i], spaces[i])) {
-        deltaL -=
-            c_act * feature_group_weights[feature.weight_index].diff_act_pass();
+        deltaL -= c_pass * feature_group_weights[feature.weight_index].diff_act_pass();
+      } 
+      else if (feature.feature.contained_in(opponent_pieces[i], spaces[i])) {
+        deltaL -= c_act * feature_group_weights[feature.weight_index].diff_act_pass();
       }
     }
 
     for (const auto i : b.get_spaces().get_all_position_indices()) {
-      candidate_moves[typename Board::PatternT(1LLU << i)] =
-          typename Board::MoveT(i,
-                                deltaL + center_weight * vtile[i] +
-                                    (noise_enabled ? noise(engine) : 0.0),
-                                player);
+      candidate_moves[typename Board::PatternT(1LLU << i)] = typename Board::MoveT(i, deltaL + center_weight * vtile[i] + (noise_enabled ? noise(engine) : 0.0), player);
     }
 
     for (const auto& feature : features) {
@@ -506,24 +502,15 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
       // If the current player has the required pieces but the opponent can
       // block us or if the other player has the feature and we can block
       // them...
-      const bool can_be_removed =
-          feature.feature.can_be_removed(player_pieces[i], spaces[i]);
-      const bool can_remove_opponent =
-          feature.feature.can_be_removed(opponent_pieces[i], spaces[i]);
+      const bool can_be_removed = feature.feature.can_be_removed(player_pieces[i], spaces[i]);
+      const bool can_remove_opponent = feature.feature.can_be_removed(opponent_pieces[i], spaces[i]);
       if (can_be_removed || can_remove_opponent) {
-        for (const auto& position :
-             feature.feature.spaces.get_all_positions()) {
+        for (const auto& position : feature.feature.spaces.get_all_positions()) {
           if (b.contains_spaces(position)) {
             auto search = candidate_moves.find(position);
             if (search != candidate_moves.end()) {
-              if (can_be_removed)
-                search->second.val -=
-                    c_pass *
-                    feature_group_weights[feature.weight_index].weight_pass;
-              if (can_remove_opponent)
-                search->second.val +=
-                    c_act *
-                    feature_group_weights[feature.weight_index].weight_act;
+              if (can_be_removed)       search->second.val -= c_pass * feature_group_weights[feature.weight_index].weight_pass;
+              if (can_remove_opponent)  search->second.val += c_act * feature_group_weights[feature.weight_index].weight_act;
             }
           }
         }
