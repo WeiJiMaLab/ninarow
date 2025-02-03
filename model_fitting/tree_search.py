@@ -94,7 +94,7 @@ class DefaultModel(Model):
             "initial_value": 0.05, 
             "lower_bound": 0, 
             "upper_bound": 1, 
-            "plausible_lower_bound": 0.001, 
+            "plausible_lower_bound": 0.05, 
             "plausible_upper_bound": 0.5
             },
         {
@@ -134,7 +134,7 @@ class DefaultModel(Model):
             "plausible_upper_bound": 5},
         {
             "name": "FP delta",
-            "initial_value": 5,
+            "initial_value": 10,
             "lower_bound": -10,
             "upper_bound": 10,
             "plausible_lower_bound": -5,
