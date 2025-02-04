@@ -24,7 +24,6 @@ class Model(ABC):
     """
     Abstract base class for models.
     """
-
     @abstractmethod
     def set_params(self, params):
         pass
