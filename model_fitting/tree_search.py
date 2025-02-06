@@ -59,7 +59,7 @@ class Model(ABC):
     def __call__(self, board):
         return self.predict(board)
 
-class DefaultModel(Model):
+class TreeSearch(Model):
     """
     The default model used by Bas.
     """
@@ -172,7 +172,7 @@ class Fitter:
     The main class for finding the best heuristic/search parameter
     fit for a given dataset.
     """
-    def __init__(self, model: Model, threads=16, verbose = False):
+    def __init__(self, model: Model, threads=16, verbose = False, subsample = None):
         """
         Constructor.
 
@@ -189,6 +189,7 @@ class Fitter:
         self.num_workers = threads
         self.iteration_count = 0
         self.time = time()
+        self.subsample = subsample
 
     def calculate_expected_counts(self, log_likelihoods, c):
         """
@@ -278,7 +279,7 @@ class Fitter:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
-    def log_likelihood(self, params, data: pd.DataFrame, counts = None):
+    def log_likelihood(self, params, data: pd.DataFrame):
         """
         Calculate the log likelihood of the model given the parameters and data.
         Parameters:
@@ -287,8 +288,6 @@ class Fitter:
             The parameters of the model.
         data : pd.DataFrame
             The data to fit the model to. Each row represents a trial.
-        counts : array-like, optional
-            The counts for each trial. If None, defaults to an array of ones with the same length as the number of trials.
         Returns:
         --------
         np.ndarray
@@ -302,10 +301,9 @@ class Fitter:
         """
         tick = time()
         n_trials = len(data)
-        if counts is None: counts = np.ones(n_trials)
 
         # initialize IBS trackers to keep track of successes and failures in model simulation
-        trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=count) for key, count in zip(data.itertuples(), counts)}
+        trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
 
         shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
@@ -321,24 +319,21 @@ class Fitter:
         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers])
     
     def optimize(self, x): 
-        log_likelihood = self.log_likelihood(x, self.data, self.counts).sum()
+        log_likelihood = self.log_likelihood(x, self.data).sum()
         if self.verbose: print(f"\t[{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
     
-    def evaluate(self, params, data: pd.DataFrame, n_iters = 10, counts = None):
+    def evaluate(self, params, data: pd.DataFrame, n_iters = 10):
         """
         Evaluates the log-likelihood of the given parameters on the given data.
 
         Args:
         params: The parameters to evaluate.
         data: The observed data to be fitted to.
-        counts: The number of times each move was observed in the data. If not provided, 
-                each move is assumed to have been observed once.
         n_iters: The number of iterations to run the evaluation for.
         """
-        return np.array([self.log_likelihood(params, data, counts) for _ in tqdm(range(n_iters))]).mean(axis = 0)
-
+        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))]).mean(axis = 0)
 
     def fit(self, data: pd.DataFrame, bads_options={
                     'uncertainty_handling': True,
@@ -369,11 +364,12 @@ class Fitter:
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
         self.data = data
+        self.data["expected_counts"] = 1
 
         # calculate the expected counts for each move by estimating the 
         # LL with the initial guess
         initial_LL = self.evaluate(self.model.initial_params, data)
-        self.counts = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
+        self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
         # run PyBADS to optimize the initial parameter guesses
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
@@ -500,7 +496,7 @@ def initialize_thread_pool(num_threads, manual_seed=None):
         print(f"Setting manual seed {manual_seed} for single-thread")
         POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
 
-def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16):
+def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16, subsample = None):
     """
     Perform cross-validation on the given model using the specified folds.
 
@@ -527,14 +523,11 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
             train.append(folds[j])
 
     train = pd.concat(train)
-    fitter = Fitter(model, threads = threads, verbose = True)
+    fitter = Fitter(model, threads = threads, verbose = True, subsample = subsample)
     params, trainLL = fitter.fit(train)
 
     testLL = fitter.evaluate(params, test)
     return params, trainLL, testLL
-
-
-
 
 import os
 def main(): 
