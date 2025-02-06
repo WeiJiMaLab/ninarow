@@ -19,6 +19,15 @@ import pickle
 from abc import ABC, abstractmethod
 import uuid
 from time import time
+import sys
+
+def get_shallow_size(obj):
+    """Calculates the shallow size of a dictionary, including its keys and values."""
+    size = sys.getsizeof(obj)
+    if isinstance(obj, dict):
+        size += sum(sys.getsizeof(k) for k in obj.keys())
+        size += sum(sys.getsizeof(v) for v in obj.values())
+    return size
     
 class Model(ABC):
     """
@@ -63,9 +72,9 @@ class TreeSearch(Model):
     """
     The default model used by Bas.
     """
-
     def __init__(self):
         super().__init__()
+        self.name = self.__class__.__name__
         self.expt_factor = 1.0
         self.cutoff = 3.5
         self.parameter_list = [{
@@ -91,10 +100,10 @@ class TreeSearch(Model):
             "plausible_upper_bound": 0.5},
         {
             "name": "Lapse rate", 
-            "initial_value": 0.05, 
-            "lower_bound": 0, 
+            "initial_value": 0.1, #default 0.05
+            "lower_bound": 0.05, 
             "upper_bound": 1, 
-            "plausible_lower_bound": 0.001, 
+            "plausible_lower_bound": 0.05, #default in Tyler's code is 0.001
             "plausible_upper_bound": 0.5
             },
         {
@@ -306,7 +315,9 @@ class Fitter:
         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
 
-        shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
+        print("Size of trackers: ", get_shallow_size(trackers))
+        # to match original code, change to: shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
+        shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , shared_lock=True)
 
         global LOG_LIKELIHOOD
         LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
@@ -319,7 +330,12 @@ class Fitter:
         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers])
     
     def optimize(self, x): 
-        log_likelihood = self.log_likelihood(x, self.data).sum()
+        if self.subsample: 
+            data = self.data.sample(self.subsample)
+        else:
+            data = self.data
+
+        log_likelihood = self.log_likelihood(x, data).sum()
         if self.verbose: print(f"\t[{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
@@ -359,13 +375,17 @@ class Fitter:
             and then performs final log-likelihood estimation.
         - The method prints the fitted parameters and log-likelihood estimations during the process.
         """
-        print("[Preprocessing] Initial log-likelihood estimation")
         self.time = time()
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
+
+        print("[Initializing] Initializing thread pool")
+        initialize_thread_pool(self.num_workers)
+
         self.data = data
         self.data["expected_counts"] = 1
 
+        print("[Preprocessing] Initial log-likelihood estimation")
         # calculate the expected counts for each move by estimating the 
         # LL with the initial guess
         initial_LL = self.evaluate(self.model.initial_params, data)
