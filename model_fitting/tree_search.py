@@ -311,6 +311,10 @@ class Fitter:
         tick = time()
         n_trials = len(data)
 
+        if "expected_counts" not in data.columns:
+            data["expected_counts"] = 1
+            print("Warning: 'expected_counts' column not found in data. Defaulting to 1 for all rows.")
+
         # initialize IBS trackers to keep track of successes and failures in model simulation
         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
@@ -383,6 +387,7 @@ class Fitter:
         initialize_thread_pool(self.num_workers)
 
         self.data = data
+        # required success counts for the tracker to terminate
         self.data["expected_counts"] = 1
 
         print("[Preprocessing] Initial log-likelihood estimation")
@@ -398,7 +403,7 @@ class Fitter:
         print("[Fitted Parameters]: {}".format(fitted_params))
 
         print("[Postprocessing] Final log-likelihood estimation")
-        final_LL = self.evaluate(fitted_params, data)
+        final_LL = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
     
     @staticmethod
