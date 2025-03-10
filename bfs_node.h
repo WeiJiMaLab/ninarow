@@ -29,6 +29,9 @@ class BFSNode : public Node<Board> {
    * Heuristic values for a black win and white win, respectively. This is the
    * maximum tree depth, which is the maximum number of moves plus one, plus
    * one.
+   * J: This feels like a monkey-patch solution to me - basically it sets
+   * the opt and pess value to an arbitrarily large number or small number
+   * based on how far away a win or loss is from the current node.
    * @{
    */
   static constexpr int BLACK_WINS = Board::get_max_num_moves() + 1 + 1;
@@ -49,11 +52,13 @@ class BFSNode : public Node<Board> {
 
   /**
    * A pessimistic estimate of the true expected value of this node.
+   * J: this isn't *quite* true - pess corresponds the pessimistic number of moves until a terminal state (+ if black, - if white)
    */
   int pess;
 
   /**
    * An optimistic estimate of the true expected value of this node.
+   * J: This also isn't *quite* true - opt corresponds to the optimistic estimate of number of moves until a terminal state (+ if black, - if white)
    */
   int opt;
 
@@ -117,6 +122,7 @@ class BFSNode : public Node<Board> {
 
   /**
    * Establishes initial values for pess and opt based on the board state.
+   * J: This sets the pessimistic and optimistic estimates of when we are done
    */
   void setup_pess_opt() {
     if (this->board.player_has_won(Player::Player1))
@@ -254,6 +260,9 @@ class BFSNode : public Node<Board> {
   /**
    * @return True if the heuristic value of this node has converged, i.e. if the
    * pessimistic and optimistic bounds on the value of the node are equal.
+   * J: the above comment is also wrong - the state is considered determined if we're 
+   * sure that it will end in a specific way - i.e. pess and opt will only be the same
+   * if either a win, draw, or loss is certain.
    */
   virtual bool determined() const override { return pess == opt; }
 
