@@ -19,9 +19,22 @@
 // size_t should always be unsigned long int.
 #if defined(_WIN32) || defined(_WIN64)
 typedef unsigned long long int size_t;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+typedef unsigned long int size_t;
 #else
 typedef unsigned long int size_t;
 #endif
+
+// Additional configuration for Arm64
+#if defined(__aarch64__)
+#ifndef SWIG_PYTHON_SAFE_CSTR
+#define SWIG_PYTHON_SAFE_CSTR
+#endif
+#define SWIG_PYTHON_CAST_MODE_PYTHON
+#endif
+
+// Python-specific configuration
+#define SWIG_PYTHON_EXTRA_NATIVE_CONTAINERS
 %}
 
 %include "stdint.i"
