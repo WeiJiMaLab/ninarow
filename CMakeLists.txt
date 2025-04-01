@@ -17,6 +17,23 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "NInARow Build Type: ${CMAKE_BUILD_TYPE}")
 
+# Detect architecture
+if(APPLE)
+    execute_process(
+        COMMAND uname -m
+        OUTPUT_VARIABLE ARCHITECTURE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    message(STATUS "Detected architecture: ${ARCHITECTURE}")
+    
+    # Set specific flags for Apple Silicon
+    if("${ARCHITECTURE}" STREQUAL "arm64")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch arm64")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch arm64")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -arch arm64")
+    endif()
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -33,8 +50,9 @@ FetchContent_Declare(
     )
 FetchContent_MakeAvailable(Eigen)
 
+# Find Python and SWIG
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 find_package(SWIG REQUIRED)
-find_package(PythonLibs REQUIRED)
 
 # Find Boost library
 find_package(Boost REQUIRED)
@@ -44,7 +62,7 @@ include_directories(${Boost_INCLUDE_DIRS})
 
 include(${SWIG_USE_FILE})
 set(CMAKE_SWIG_FLAGS "")
-include_directories(${PYTHON_INCLUDE_DIRS})
+include_directories(${Python3_INCLUDE_DIRS})
 
 set(CXX_FLAGS)
 
@@ -80,11 +98,23 @@ include(CheckTypeSize)
 check_type_size("size_t" SIZE_T_SIZE)
 message(STATUS "Detected size_t size: ${SIZE_T_SIZE}")
 
-# Define SWIGWORDSIZE64 if size_t is not 8 bytes
-if (NOT SIZE_T_SIZE EQUAL 8)
+# Handle architecture-specific SWIG configuration
+if(APPLE AND "${ARCHITECTURE}" STREQUAL "arm64")
+    # For Apple Silicon (arm64), we need to ensure proper 64-bit handling
     target_compile_definitions(swig_fourbynine PRIVATE SWIGWORDSIZE64)
+    target_compile_definitions(swig_fourbynine PRIVATE __aarch64__)
+    target_compile_definitions(swig_fourbynine PRIVATE SWIG_PYTHON_SAFE_CSTR=1)
+    target_compile_definitions(swig_fourbynine PRIVATE SWIG_PYTHON_CAST_MODE_PYTHON)
+    set_target_properties(swig_fourbynine PROPERTIES 
+        COMPILE_FLAGS "-arch arm64"
+        LINK_FLAGS "-arch arm64"
+    )
+elseif(NOT WIN32)
+    # For other Unix-like systems, check size_t size
+    if (NOT SIZE_T_SIZE EQUAL 8)
+        target_compile_definitions(swig_fourbynine PRIVATE SWIGWORDSIZE64)
+    endif()
 endif()
-
 
 IF (NOT WIN32)
   set_target_properties(swig_fourbynine PROPERTIES SUFFIX ".so")
@@ -92,8 +122,15 @@ ENDIF()
 
 target_include_directories(swig_fourbynine PUBLIC "./")
 target_link_libraries(swig_fourbynine
-  ${PYTHON_LIBRARIES}
+  Python3::Python
   Eigen3::Eigen
+)
+
+# Set Python module properties
+set_target_properties(swig_fourbynine PROPERTIES
+    PREFIX "_"
+    SUFFIX ".so"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/model_fitting"
 )
 
 add_custom_command(TARGET swig_fourbynine POST_BUILD 

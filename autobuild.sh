@@ -1,9 +1,20 @@
 #!/bin/bash
 printf "\e[32mBeginning build of n-in-a-row package\e[0m\n"
 
-echo "Are you running on (1) Mac, (2) Cluster, or (3) Windows?"
-read -p "Enter the number corresponding to your environment: " env
-
+# Detect architecture on Mac
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    ARCH=$(uname -m)
+    if [[ "$ARCH" == "arm64" ]]; then
+        echo "Detected Apple Silicon (arm64) Mac"
+        env=1
+    else
+        echo "Detected Intel Mac"
+        env=1
+    fi
+else
+    echo "Are you running on (1) Mac, (2) Cluster, or (3) Windows?"
+    read -p "Enter the number corresponding to your environment: " env
+fi
 
 case $env in
     1)
@@ -49,6 +60,8 @@ if [ "$env" -eq 3 ]; then
     echo "Running cmake for Release build on Windows..."
     cmake --build . --config Release
 fi
+
+python3 ../model_fitting/install_test.py
 
 read -p "Do you want to run tests? (y/n): " run_tests
 if [ "$run_tests" == "y" ]; then
