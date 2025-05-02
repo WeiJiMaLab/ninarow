@@ -151,11 +151,11 @@ class TreeSearch(Model):
         ]
 
         self.param_names = [param["name"] for param in self.parameter_list]
-        self.initial_params = np.array([param["initial_value"] for param in self.parameter_list], dtype=np.float64)
-        self.upper_bound = np.array([param["upper_bound"] for param in self.parameter_list], dtype=np.float64)
-        self.lower_bound = np.array([param["lower_bound"] for param in self.parameter_list], dtype=np.float64)
-        self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float64)
-        self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float64)
+        self.initial_params = np.array([param["initial_value"] for param in self.parameter_list], dtype=np.float32)
+        self.upper_bound = np.array([param["upper_bound"] for param in self.parameter_list], dtype=np.float32)
+        self.lower_bound = np.array([param["lower_bound"] for param in self.parameter_list], dtype=np.float32)
+        self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
+        self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
         self.c = 50 # used in calculate_expected_counts
 
@@ -212,9 +212,9 @@ class Fitter:
 
             list: A list of the expected number of times each move would be reproduced given the L-values.
         """
-        x = np.linspace(1e-6, 1 - 1e-6, int(1e6))
+        x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
         dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
-        p = np.exp(-log_likelihoods)
+        p = np.exp(-log_likelihoods).astype(np.float32)
         interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
         interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
         times = (c * interp1(p)) / np.mean(interp2(p))
@@ -331,7 +331,7 @@ class Fitter:
         [result.get() for result in results]
 
         print(f"\tTime taken: {time() - self.time} since Start, {time() - tick} since Loop")        
-        return np.array([shared_trackers[key].log_likelihood for key in shared_trackers])
+        return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
     
     def optimize(self, x): 
         if self.subsample: 
@@ -353,7 +353,7 @@ class Fitter:
         data: The observed data to be fitted to.
         n_iters: The number of iterations to run the evaluation for.
         """
-        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))]).mean(axis = 0)
+        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
     def fit(self, data: pd.DataFrame, bads_options={
                     'uncertainty_handling': True,
