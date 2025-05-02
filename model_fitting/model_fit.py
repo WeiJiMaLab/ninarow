@@ -112,15 +112,15 @@ class DefaultModel:
         self.cutoff = 3.5
 
         self.x0 = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
-                            1, 0.4, 3.5, 5], dtype=np.float64)
+                            1, 0.4, 3.5, 5], dtype=np.float32)
         self.ub = np.array(
-            [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float64)
+            [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float32)
         self.lb = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
-                            10, -10, -10, -10], dtype=np.float64)
+                            10, -10, -10, -10], dtype=np.float32)
         self.pub = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
-                            5, 5, 5, 5], dtype=np.float64)
+                            5, 5, 5, 5], dtype=np.float32)
         self.plb = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
-                             5, -5, -5, -5], dtype=np.float64)
+                             5, -5, -5, -5], dtype=np.float32)
         self.c = 50
 
     def create_heuristic(self, params):
