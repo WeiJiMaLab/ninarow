@@ -70,11 +70,11 @@ class TreeSearch(Model):
             "initial_value": 2.0, 
             "lower_bound": 0.1, 
             "upper_bound": 10.0, 
-            "plausible_lower_bound": 0.1, 
-            "plausible_upper_bound": 9.99},
+            "plausible_lower_bound": 1.0, 
+            "plausible_upper_bound": 6.0},
         {
             "name": "Stopping Probability", 
-            "initial_value": 0.05,
+            "initial_value": 0.1,
             "lower_bound": 0.001, 
             "upper_bound": 1.0, 
             "plausible_lower_bound": 0.001, 
@@ -131,11 +131,11 @@ class TreeSearch(Model):
             "plausible_upper_bound": 5},
         {
             "name": "4IAR",
-            "initial_value": 10,
+            "initial_value": 8.0,
             "lower_bound": -10,
-            "upper_bound": 10,
+            "upper_bound": 12,
             "plausible_lower_bound": -5,
-            "plausible_upper_bound": 5}
+            "plausible_upper_bound": 10}
         ]
 
         self.param_names = [param["name"] for param in self.parameter_list]
@@ -315,9 +315,10 @@ class Fitter:
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
     def fit(self, data: pd.DataFrame, bads_options={
-                    'uncertainty_handling': True,
+                    'uncertainty_handling': False,
                     'noise_final_samples': 0,
-                    'max_fun_evals': 2000
+                    'max_fun_evals': 500,
+                    'tol_fun': 1e-2
                   }):
         """
         Fits the model to the provided data using the BADS optimization algorithm.
