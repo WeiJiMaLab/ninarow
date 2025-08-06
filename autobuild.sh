@@ -78,7 +78,13 @@ if [ "$install_packages" == "y" ]; then
     echo "Installing required Python packages..."
     cd ../model_fitting
     if [ "$env" -eq 1 ]; then
-        pip3 install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+        # Check if we're on Apple Silicon (arm64) and need special handling for certain packages
+        if [[ "$ARCH" == "arm64" ]]; then
+            echo "Detected Apple Silicon - installing with architecture-specific flags for compatibility..."
+            pip3 install --no-binary=atomics --no-cache-dir -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+        else
+            pip3 install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+        fi
     else
         pip install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
     fi
