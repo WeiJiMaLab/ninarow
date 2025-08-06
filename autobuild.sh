@@ -53,7 +53,9 @@ mkdir -p build
 cd build
 
 echo "Running cmake..."
-cmake ..
+# Explicitly specify Python executable to prevent version mismatch issues with SWIG extensions
+echo "Using Python executable: $(which python3)"
+cmake -DPython3_EXECUTABLE=$(which python3) ..
 cmake --build .
 
 if [ "$env" -eq 3 ]; then
