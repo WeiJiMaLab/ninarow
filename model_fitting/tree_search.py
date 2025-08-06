@@ -43,25 +43,13 @@ class Model(ABC):
         pass
 
     def save(self, filename):
-        """
-        Save the model to a file using pickle.
-
-        Args:
-        filename: The name of the file to save the model to.
-        """
+        """Save the model to a file using pickle."""
         with open(filename, 'wb') as f:
             pickle.dump(self, f)
 
     @staticmethod
     def load(filename):
-        """
-        Load the model from a file using pickle.
-
-        Args:
-        filename: The name of the file to load the model from.
-        Returns:
-        The loaded model.
-        """
+        """Load the model from a file using pickle."""
         with open(filename, 'rb') as f:
             return pickle.load(f)
 
@@ -86,7 +74,7 @@ class TreeSearch(Model):
             "plausible_upper_bound": 9.99},
         {
             "name": "Stopping Probability", 
-            "initial_value": 0.02, 
+            "initial_value": 0.05,
             "lower_bound": 0.001, 
             "upper_bound": 1.0, 
             "plausible_lower_bound": 0.001, 
@@ -100,10 +88,10 @@ class TreeSearch(Model):
             "plausible_upper_bound": 0.5},
         {
             "name": "Lapse rate", 
-            "initial_value": 0.1, #default 0.05
+            "initial_value": 0.1,
             "lower_bound": 0.05, 
             "upper_bound": 1, 
-            "plausible_lower_bound": 0.05, #default in Tyler's code is 0.001
+            "plausible_lower_bound": 0.05,
             "plausible_upper_bound": 0.5
             },
         {
@@ -157,7 +145,7 @@ class TreeSearch(Model):
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
-        self.c = 50 # used in calculate_expected_counts
+        self.c = 50
 
     def set_params(self, params):
         assert len(params) == len(self.parameter_list), f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
@@ -165,13 +153,7 @@ class TreeSearch(Model):
         self.heuristic.seed_generator(random.randint(0, 2**64))
     
     def predict(self, board): 
-        '''
-        Predicts the best move for a given board state.
-        Args:
-            board: The board state to predict the best move for.
-        Returns:
-            The index of the best move for the given board state.
-        '''
+        """Predicts the best move for a given board state."""
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
@@ -183,15 +165,11 @@ class Fitter:
     """
     def __init__(self, model: Model, threads=16, verbose = False, subsample = None):
         """
-        Constructor.
-
         Args:
-            model: The model this fitter should use. Produces heuristics/searches, and supplies
-                   parameters for fitting.
-            random_sample: If specified, instead of testing each position on a BADS function evaluation, 
-                           instead randomly sample up to N positions without replacement.
-            verbose: If specified, print extra debugging info.
+            model: The model this fitter should use.
+            verbose: Print extra debugging info.
             threads: The number of threads to use when fitting.
+            subsample: If specified, randomly sample up to N positions without replacement.
         """
         self.model = model
         self.verbose = verbose
@@ -201,17 +179,7 @@ class Fitter:
         self.subsample = subsample
 
     def calculate_expected_counts(self, log_likelihoods, c):
-        """
-        Calculate the expected observation counts for each move based on their L-values.
-
-        This function converts log-likelihoods to probabilities and then determines the
-        expected number of times each move should be reproduced.
-
-            log_likelihoods (list): A list of L-values corresponding to each move.
-            c (float): A scalar provided by the model.
-
-            list: A list of the expected number of times each move would be reproduced given the L-values.
-        """
+        """Calculate the expected observation counts for each move based on their L-values."""
         x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
         dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
         p = np.exp(-log_likelihoods).astype(np.float32)
@@ -243,47 +211,45 @@ class Fitter:
         
         self.model.set_params(params)
 
-        # tracking the global expected log-likelihood across all processes
-        # if it exceeds the cutoff, all processes should exit
+
         while LOG_LIKELIHOOD.value <= cutoff:
 
-            # filter for the trials that have not yet met the success threshold
+
             incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
             if not incomplete_trials: break
             
-            # Select a random incomplete trial and make a deep copy of it
+
             key, tracker = copy.deepcopy(random.choice(incomplete_trials))
 
-            # convert the key to a board state and move index
+
             black_, white_, move_, _= key
             board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
             actual_move = int(move_).bit_length() - 1
 
-            # delta_log_likelihood accumulates the change in log-likelihood 
-            # while the process is running
+
             delta_log_likelihood = 0
 
             while tracker.success_count < tracker.success_threshold:
                 predicted_move = self.model.predict(board)
                 
-                # if the prediction is correct
+
                 if (predicted_move == actual_move):
                     delta_log_likelihood += tracker.record_success()
 
-                    # update the global trackers and log likelihood
+
                     with trackers.lock:
                         if tracker.success_count == trackers[key].success_count + 1:
                             trackers[key] = tracker
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                     break
                 
-                # if the prediction is incorrect
+
                 else:
                     delta_log_likelihood += tracker.record_failure()
 
-                    # if the cutoff is met, we need to exit all processes
+
                     if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
-                        # this signals to all other processes that the cutoff has been met
+
                         with trackers.lock:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
@@ -315,12 +281,12 @@ class Fitter:
             data["expected_counts"] = 1
             print("Warning: 'expected_counts' column not found in data. Defaulting to 1 for all rows.")
 
-        # initialize IBS trackers to keep track of successes and failures in model simulation
+
         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
 
         print("Size of trackers: ", get_shallow_size(trackers))
-        # to match original code, change to: shared_trackers = UltraDict(trackers, full_dump_size= n_trials * 1024 * 1024, shared_lock=True)
+
         shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , shared_lock=True)
 
         global LOG_LIKELIHOOD
@@ -345,14 +311,7 @@ class Fitter:
         return log_likelihood
     
     def evaluate(self, params, data: pd.DataFrame, n_iters = 10):
-        """
-        Evaluates the log-likelihood of the given parameters on the given data.
-
-        Args:
-        params: The parameters to evaluate.
-        data: The observed data to be fitted to.
-        n_iters: The number of iterations to run the evaluation for.
-        """
+        """Evaluates the log-likelihood of the given parameters on the given data."""
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
     def fit(self, data: pd.DataFrame, bads_options={
@@ -387,16 +346,15 @@ class Fitter:
         initialize_thread_pool(self.num_workers)
 
         self.data = data
-        # required success counts for the tracker to terminate
+
         self.data["expected_counts"] = 1
 
         print("[Preprocessing] Initial log-likelihood estimation")
-        # calculate the expected counts for each move by estimating the 
-        # LL with the initial guess
+
         initial_LL = self.evaluate(self.model.initial_params, data)
         self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
-        # run PyBADS to optimize the initial parameter guesses
+
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']
 
@@ -408,9 +366,7 @@ class Fitter:
     
     @staticmethod
     def check_dataframe(data): 
-        """
-        Check that the data is in the correct format for fitting.
-        """
+        """Check that the data is in the correct format for fitting."""
         assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
         assert 'black' in data.columns, "Data must have a 'black' column."
         assert 'white' in data.columns, "Data must have a 'white' column."
@@ -427,56 +383,26 @@ class Fitter:
 
 class IBSTracker:
     """
-        A tracker for the Inverse Binomial Sampling (IBS) process, used to monitor and fit a heuristic to a given dataset.
-        The IBSTracker class keeps track of the number of successful and unsuccessful heuristic evaluations of a given 
-        position, and adjusts the log-likelihood based on these evaluations. It is particularly useful in scenarios where 
-        the heuristic needs to be iteratively fitted to improve its accuracy.
-        Attributes:
-            success_threshold (int): The threshold for considering a prediction as successful.
-            expt_factor (float): A factor controlling the fitting cutoff of the BADS (Bayesian Adaptive Direct Search) process.
-            attempt_count (int): The number of attempts made since the last success.
-            success_count (int): The total number of successful predictions.
-            log_likelihood (float): The cumulative log-likelihood of the heuristic's performance.
-        Methods:
-            record_success():
-                Records a successful prediction, resets the attempt count, and returns the change in log-likelihood.
-            record_failure():
-                Records an unsuccessful prediction, increments the attempt count, updates the log-likelihood, and returns 
-                the change in log-likelihood.
-            __repr__():
-                Returns a string representation of the current state of the tracker, including the number of successes, 
-                attempts, and the log-likelihood.
+    A tracker for the Inverse Binomial Sampling (IBS) process, used to monitor 
+    and fit a heuristic to a given dataset by tracking successes and failures.
     """
     def __init__(self, expt_factor, success_threshold = 1):
-        """
-        Constructor.
-
-        Args:
-            expt_factor: Controls the fitting cutoff of the BADS process.
-        """
+        """Initialize IBSTracker with experiment factor and success threshold."""
         self.success_threshold = success_threshold
         self.expt_factor = expt_factor
         self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
 
     def record_success(self):
-        """
-        When the prediction is correct, record it and return the log likelihood diff
-        Returns:
-            The change in log-likelihood.
-        """
+        """Record a successful prediction and return the log likelihood diff."""
         scale_factor = self.expt_factor / self.success_threshold
         self.success_count += 1
 
-        # reset the attempt count
+
         self.attempt_count = 0
         return -scale_factor
 
     def record_failure(self):
-        """
-        When a prediction is incorrect, record it and return the log likelihood diff
-        Returns:
-            The change in log-likelihood.
-        """
+        """Record a failed prediction and return the log likelihood diff."""
         scale_factor = self.expt_factor / self.success_threshold
         self.attempt_count += 1
         delta = scale_factor * (1 / self.attempt_count)
@@ -487,12 +413,12 @@ class IBSTracker:
         return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
 
 def initialize_thread(shared_value):
-    # initialize the thread to some shared value
+
     global LOG_LIKELIHOOD
     LOG_LIKELIHOOD = shared_value
 
 def set_seeds(base_seed, thread_id):
-    # Create a unique seed for each thread
+
     thread_seed = base_seed + thread_id
     random.seed(thread_seed)
     print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
@@ -556,7 +482,6 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
 
 import os
 def main(): 
-    # code to test the consistency of the model fitting
     data_path = "../data"
     output_path = "../data/out"
     n_splits = 5
@@ -568,17 +493,17 @@ def main():
     print(f"Building output directory at {output_path}")
     os.makedirs(output_path, exist_ok = True)
 
-    # first, we have to check to see if all the splits are there ...
+
     assert np.all([f"{i + 1}.csv" in os.listdir(data_path) for i in range(n_splits)])
     print("Detected splits in this directory. Loading splits ...")
 
-    # then we read them in
+
     splits = [pd.read_csv(f"{data_path}/{i + 1}.csv") for i in range(n_splits)]
 
     random.seed(10)
     initialize_thread_pool(1, manual_seed = 10)
 
-    q = cross_validate(DefaultModel(), splits, leave_out_idx = 1, threads = 1)
+    q = cross_validate(TreeSearch(), splits, leave_out_idx = 1, threads = 1)
 
 
 if __name__ == "__main__":
