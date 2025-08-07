@@ -74,11 +74,11 @@ class TreeSearch(Model):
             "plausible_upper_bound": 6.0},
         {
             "name": "Stopping Probability", 
-            "initial_value": 0.1,
-            "lower_bound": 0.001, 
+            "initial_value": 0.3,
+            "lower_bound": 0.01, 
             "upper_bound": 1.0, 
-            "plausible_lower_bound": 0.001, 
-            "plausible_upper_bound": 0.99},
+            "plausible_lower_bound": 0.01, 
+            "plausible_upper_bound": 0.9},
         {
             "name": "Feature Drop Rate", 
             "initial_value": 0.2, 
@@ -279,13 +279,13 @@ class Fitter:
 
         if "expected_counts" not in data.columns:
             data["expected_counts"] = 1
-            print("Warning: 'expected_counts' column not found in data. Defaulting to 1 for all rows.")
+            print("Warning: 'expected_counts' column not found. Defaulting to 1.")
 
 
         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
 
-        print("Size of trackers: ", get_shallow_size(trackers))
+        print(f"Tracker size: {get_shallow_size(trackers)} bytes")
 
         shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , shared_lock=True)
 
@@ -296,7 +296,7 @@ class Fitter:
         results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
-        print(f"\tTime taken: {time() - self.time} since Start, {time() - tick} since Loop")        
+        print(f"Time: {time() - tick:.2f}s (total: {time() - self.time:.2f}s)")        
         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
     
     def optimize(self, x): 
@@ -306,19 +306,19 @@ class Fitter:
             data = self.data
 
         log_likelihood = self.log_likelihood(x, data).sum()
-        if self.verbose: print(f"\t[{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
+        if self.verbose: print(f"[BADS-{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} | Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
     
     def evaluate(self, params, data: pd.DataFrame, n_iters = 10):
         """Evaluates the log-likelihood of the given parameters on the given data."""
+        print(f"Running evaluation with {n_iters} iterations...")
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
     def fit(self, data: pd.DataFrame, bads_options={
                     'uncertainty_handling': False,
                     'noise_final_samples': 0,
-                    'max_fun_evals': 500,
-                    'tol_fun': 1e-2
+                    'max_fun_evals': 500
                   }):
         """
         Fits the model to the provided data using the BADS optimization algorithm.
@@ -328,7 +328,7 @@ class Fitter:
             {
                 'uncertainty_handling': True,
                 'noise_final_samples': 0,
-                'max_fun_evals': 2000
+                'max_fun_evals': 500
             }
         Returns:
         tuple: A tuple containing:
@@ -343,14 +343,14 @@ class Fitter:
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
 
-        print("[Initializing] Initializing thread pool")
+        print("Initializing thread pool...")
         initialize_thread_pool(self.num_workers)
 
         self.data = data
 
         self.data["expected_counts"] = 1
 
-        print("[Preprocessing] Initial log-likelihood estimation")
+        print("Initial log-likelihood estimation...")
 
         initial_LL = self.evaluate(self.model.initial_params, data)
         self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
@@ -359,9 +359,9 @@ class Fitter:
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']
 
-        print("[Fitted Parameters]: {}".format(fitted_params))
+        print(f"Fitted parameters: {fitted_params}")
 
-        print("[Postprocessing] Final log-likelihood estimation")
+        print("Final log-likelihood estimation...")
         final_LL = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
     
@@ -422,7 +422,7 @@ def set_seeds(base_seed, thread_id):
 
     thread_seed = base_seed + thread_id
     random.seed(thread_seed)
-    print(f"Thread {thread_id}: Base Seed {base_seed}, Seed: {thread_seed}, Random Number: {random.randint(0, 2**64)}\n")
+    print(f"Thread {thread_id}: seed={thread_seed}")
     
 
 def initialize_thread_pool(num_threads, manual_seed=None):
@@ -445,7 +445,7 @@ def initialize_thread_pool(num_threads, manual_seed=None):
 
     if manual_seed is not None:
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
-        print(f"Setting manual seed {manual_seed} for single-thread")
+        print(f"Manual seed: {manual_seed}")
         POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
 
 def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16, subsample = None):
@@ -466,7 +466,7 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
     """
     assert leave_out_idx < len(folds), "Invalid leave-out index!"
 
-    print("Cross validating split {} against the other {} splits".format(leave_out_idx + 1, len(folds) - 1))
+    print(f"Cross-validating split {leave_out_idx + 1} vs {len(folds) - 1} others")
     test = folds[leave_out_idx]
 
     train = []
@@ -483,20 +483,20 @@ def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int =
 
 import os
 def main(): 
-    data_path = "../data"
-    output_path = "../data/out"
+    data_path = "data"
+    output_path = "data/out"
     n_splits = 5
     fold_number = 1
     threads = 1
     random_sample = False
     verbose = True
 
-    print(f"Building output directory at {output_path}")
+    print(f"Output directory: {output_path}")
     os.makedirs(output_path, exist_ok = True)
 
 
     assert np.all([f"{i + 1}.csv" in os.listdir(data_path) for i in range(n_splits)])
-    print("Detected splits in this directory. Loading splits ...")
+    print("Loading splits...")
 
 
     splits = [pd.read_csv(f"{data_path}/{i + 1}.csv") for i in range(n_splits)]
