@@ -111,16 +111,13 @@ class DefaultModel:
         self.expt_factor = 1.0
         self.cutoff = 3.5
 
-        self.x0 = np.array([2.0, 0.02, 0.2, 0.05, 1.2, 0.8,
-                            1, 0.4, 3.5, 5], dtype=np.float32)
-        self.ub = np.array(
-            [10.0, 1, 1, 1, 4, 10, 10, 10, 10, 10], dtype=np.float32)
-        self.lb = np.array([0.1, 0.001, 0, 0, 0.25, -10, -
-                            10, -10, -10, -10], dtype=np.float32)
-        self.pub = np.array([9.99, 0.99, 0.5, 0.5, 2, 5,
-                            5, 5, 5, 5], dtype=np.float32)
-        self.plb = np.array([1, 0.1, 0.001, 0.001, 0.5, -5, -
-                             5, -5, -5, -5], dtype=np.float32)
+        self.x0 = np.array([2. , 0.3, 0.2, 0.1, 1.2, 0.8, 1. , 0.4, 3.5, 8. ], dtype=np.float32)
+        self.ub = np.array([10.,  1.,  1.,  1.,  4., 10., 10., 10., 10., 12.], dtype=np.float32)
+        self.lb = np.array([  0.1 ,   0.01,   0.  ,   0.05,   0.25, -10.  , -10.  , -10.  ,
+       -10.  , -10.  ], dtype=np.float32)
+        self.pub = np.array([ 6. ,  0.9,  0.5,  0.5,  2. ,  5. ,  5. ,  5. ,  5. , 10. ], dtype=np.float32)
+        self.plb = np.array([ 1.  ,  0.01,  0.  ,  0.05,  0.5 , -5.  , -5.  , -5.  , -5.  ,
+       -5.  ], dtype=np.float32)
         self.c = 50
 
     def create_heuristic(self, params):
@@ -249,7 +246,6 @@ class ModelFitter:
         Returns:
             The log-likelihood of each observed move at each position given the set of parameters.
         """
-        tick = time()
         N = len(move_tasks)
 
         cutoff = N * self.model.cutoff
@@ -263,7 +259,6 @@ class ModelFitter:
             self.estimate_log_lik_ibs, (params, cutoff, shared_tasks,)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
-        print(f"\tTime taken: {time() - self.time} since Start, {time() - tick} since Loop")        
         L_values = {}
         for move in shared_tasks:
             L_values[move] = shared_tasks[move].L
@@ -359,7 +354,7 @@ class ModelFitter:
             
             loglik = sum(list(self.compute_loglik(subsampled_tasks, x).values()))
             if self.verbose:
-                print(f"\t[{opt_fun.current_iteration_count}] NLL: {np.round(loglik, 4)} Params: {[np.round(x_, 3) for x_ in x]}")
+                print(f"\t[BADS-{opt_fun.current_iteration_count}] time: {time() - self.time :.3g}s\t NLL: {loglik:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
                 opt_fun.current_iteration_count += 1
             return loglik
 
