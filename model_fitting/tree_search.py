@@ -65,6 +65,7 @@ class TreeSearch(Model):
         self.name = self.__class__.__name__
         self.expt_factor = 1.0
         self.cutoff = 3.5
+
         self.parameter_list = [{
             "name": "Pruning Threshold", 
             "initial_value": 2.0, 
@@ -214,7 +215,6 @@ class Fitter:
 
         while LOG_LIKELIHOOD.value <= cutoff:
 
-
             incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
             if not incomplete_trials: break
             
@@ -284,10 +284,7 @@ class Fitter:
 
         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
         assert(len(trackers)) == n_trials
-
-        print(f"Tracker size: {get_shallow_size(trackers)} bytes")
-
-        shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , shared_lock=True)
+        shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , buffer_size=1024 * 1024, shared_lock=True)
 
         global LOG_LIKELIHOOD
         LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
@@ -296,7 +293,6 @@ class Fitter:
         results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
         [result.get() for result in results]
 
-        print(f"Time: {time() - tick:.2f}s (total: {time() - self.time:.2f}s)")        
         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
     
     def optimize(self, x): 
@@ -306,7 +302,7 @@ class Fitter:
             data = self.data
 
         log_likelihood = self.log_likelihood(x, data).sum()
-        if self.verbose: print(f"[BADS-{self.iteration_count}] NLL: {np.round(log_likelihood, 4)} | Params: {[np.round(x_, 3) for x_ in x]}")
+        if self.verbose: print(f"\t[BADS-{self.iteration_count}]\t time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
     
@@ -315,10 +311,10 @@ class Fitter:
         print(f"Running evaluation with {n_iters} iterations...")
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
-    def fit(self, data: pd.DataFrame, bads_options={
-                    'uncertainty_handling': False,
+    def fit(self, data: pd.DataFrame, manual_seed = None, bads_options={
+                    'uncertainty_handling': True,
                     'noise_final_samples': 0,
-                    'max_fun_evals': 500
+                    'max_fun_evals': 2000
                   }):
         """
         Fits the model to the provided data using the BADS optimization algorithm.
@@ -344,7 +340,7 @@ class Fitter:
         self.__class__.check_dataframe(data)
 
         print("Initializing thread pool...")
-        initialize_thread_pool(self.num_workers)
+        initialize_thread_pool(self.num_workers, manual_seed = manual_seed)
 
         self.data = data
 
@@ -422,7 +418,7 @@ def set_seeds(base_seed, thread_id):
 
     thread_seed = base_seed + thread_id
     random.seed(thread_seed)
-    print(f"Thread {thread_id}: seed={thread_seed}")
+    print(f"Thread {thread_id}: seed={thread_seed}, Random number: {random.randint(0, 2**64)}")
     
 
 def initialize_thread_pool(num_threads, manual_seed=None):
