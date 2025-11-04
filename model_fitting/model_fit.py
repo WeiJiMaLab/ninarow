@@ -276,9 +276,9 @@ class ModelFitter:
         Returns:
             A list of the number of times we would expect each move to be reproduced given the L-values.
         """
-        x = np.linspace(1e-6, 1 - 1e-6, int(1e6))
+        x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
         dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
-        p = np.exp(-L_values)
+        p = np.exp(-L_values).astype(np.float32)
         interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
         interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
         times = (c * interp1(p)) / np.mean(interp2(p))
