@@ -20,6 +20,12 @@ from abc import ABC, abstractmethod
 import uuid
 from time import time
 import sys
+from feature_generator import (
+    make_features_from_groups, 
+    create_modular_heuristic,
+    DEFAULT_TEMPLATES,
+    DEFAULT_FEATURE_WEIGHTS
+)
 
 def get_shallow_size(obj):
     """Calculates the shallow size of a dictionary, including its keys and values."""
@@ -58,87 +64,49 @@ class Model(ABC):
 
 class TreeSearch(Model):
     """
-    The default model used by Bas.
+    Modular tree search model that constructs heuristics from templates.
+    
+    The model accepts custom templates and weights, allowing flexible heuristic
+    construction. Features are generated from templates and assembled into a
+    heuristic using create_modular_heuristic.
     """
-    def __init__(self):
+    def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         super().__init__()
         self.name = self.__class__.__name__
         self.expt_factor = 1.0
         self.cutoff = 3.5
+        self.c = 50
 
-        self.parameter_list = [{
-            "name": "Pruning Threshold", 
-            "initial_value": 2.0, 
-            "lower_bound": 0.1, 
-            "upper_bound": 10.0, 
-            "plausible_lower_bound": 1.0, 
-            "plausible_upper_bound": 6.0},
-        {
-            "name": "Stopping Probability", 
-            "initial_value": 0.3,
-            "lower_bound": 0.01, 
-            "upper_bound": 1.0, 
-            "plausible_lower_bound": 0.01, 
-            "plausible_upper_bound": 0.9},
-        {
-            "name": "Feature Drop Rate", 
-            "initial_value": 0.2, 
-            "lower_bound": 0, 
-            "upper_bound": 1, 
-            "plausible_lower_bound": 0, 
-            "plausible_upper_bound": 0.5},
-        {
-            "name": "Lapse rate", 
-            "initial_value": 0.1,
-            "lower_bound": 0.05, 
-            "upper_bound": 1, 
-            "plausible_lower_bound": 0.05,
-            "plausible_upper_bound": 0.5
-            },
-        {
-            "name": "Opponent scale", 
-            "initial_value": 1.2, 
-            "lower_bound": 0.25, 
-            "upper_bound": 4, 
-            "plausible_lower_bound": 0.5, 
-            "plausible_upper_bound": 2},
-        {
-            "name": "Center weight", 
-            "initial_value": 0.8, 
-            "lower_bound": -10, 
-            "upper_bound": 10, 
-            "plausible_lower_bound": -5, 
-            "plausible_upper_bound": 5},
-        {
-            "name": "2IARConn", 
-            "initial_value": 1, 
-            "lower_bound": -10, 
-            "upper_bound": 10, 
-            "plausible_lower_bound": -5, 
-            "plausible_upper_bound": 5},
-        {
-            "name": "2IARDisconn",
-            "initial_value": 0.4,
-            "lower_bound": -10,
-            "upper_bound": 10,
-            "plausible_lower_bound": -5,
-            "plausible_upper_bound": 5},
-        {
-            "name": "3IAR",
-            "initial_value": 3.5,
-            "lower_bound": -10,
-            "upper_bound": 10,
-            "plausible_lower_bound": -5,
-            "plausible_upper_bound": 5},
-        {
-            "name": "4IAR",
-            "initial_value": 8.0,
-            "lower_bound": -10,
-            "upper_bound": 12,
-            "plausible_lower_bound": -5,
-            "plausible_upper_bound": 10}
+        # Control parameters (search behavior)
+        self.parameter_list = [
+            {"name": "pruning_threshold", "initial_value": 2.0, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
+            {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.9},
+            {"name": "feature_drop", "initial_value": 0.2, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.5},
+            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.5},
+            {"name": "opp_scale", "initial_value": 1.2, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 0.5, "plausible_upper_bound": 2},
+            {"name": "center_weight", "initial_value": 0.8, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
         ]
 
+        # Feature templates and weights (modular design)
+        self.templates = templates if templates is not None else DEFAULT_TEMPLATES
+        self.features = make_features_from_groups(self.templates)
+        
+        # Use default weights if None provided
+        if initial_weights is None:
+            initial_weights = DEFAULT_FEATURE_WEIGHTS
+
+        # Add feature weight parameters (one per template group)
+        for group in sorted(self.templates.keys()):
+            self.parameter_list.append({
+                "name": group,
+                "initial_value": initial_weights[group],
+                "lower_bound": -10,
+                "upper_bound": 10,
+                "plausible_lower_bound": -5,
+                "plausible_upper_bound": 5
+            })
+
+        # Extract parameter arrays for optimization
         self.param_names = [param["name"] for param in self.parameter_list]
         self.initial_params = np.array([param["initial_value"] for param in self.parameter_list], dtype=np.float32)
         self.upper_bound = np.array([param["upper_bound"] for param in self.parameter_list], dtype=np.float32)
@@ -146,15 +114,25 @@ class TreeSearch(Model):
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
-        self.c = 50
-
     def set_params(self, params):
-        assert len(params) == len(self.parameter_list), f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
-        self.heuristic = fourbynine.fourbynine_heuristic.create(fourbynine.DoubleVector(bads_parameters_to_model_parameters(params)), True)
+        """Set parameters and construct heuristic from templates."""
+        assert len(params) == len(self.parameter_list), (
+            f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
+        )
+
+        # Extract control parameters
+        control_names = ["pruning_threshold", "stopping_prob", "feature_drop", "lapse_rate", "opp_scale", "center_weight"]
+        control_params = {name: float(params[self.param_names.index(name)]) for name in control_names}
+
+        # Extract feature weights
+        feature_weights = {name: float(params[self.param_names.index(name)]) for name in self.features.keys()}
+
+        # Construct heuristic using modular approach
+        self.heuristic = create_modular_heuristic(control_params, feature_weights, self.templates)
         self.heuristic.seed_generator(random.randint(0, 2**64))
     
-    def predict(self, board): 
-        """Predicts the best move for a given board state."""
+    def predict(self, board):
+        """Predict the best move for a given board state."""
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
@@ -191,51 +169,27 @@ class Fitter:
 
     def parallel_log_likelihood(self, params, trackers: UltraDict, cutoff: float):
         """
-        Compute the log-likelihood of the model parameters in parallel.
-        This function runs a parallelized process to compute the log-likelihood of the model parameters.
-        It updates the global log-likelihood value and the trackers for each trial until the log-likelihood
-        exceeds the specified cutoff value.
-        Parameters:
-        -----------
-        params : array-like
-            The parameters to set for the model.
-        trackers : dict
-            A dictionary of trackers for each trial, where each key is a tuple representing the trial
-            and each value is a tracker object that keeps track of successes and failures.
-        cutoff : float
-            The cutoff value for the log-likelihood. Once the global log-likelihood exceeds this value,
-            all processes should exit.
-        Returns:
-        --------
-        None
+        Compute log-likelihood of model parameters in parallel.
+        
+        Updates global log-likelihood and trackers for each trial until
+        the log-likelihood exceeds the cutoff value.
         """
         
         self.model.set_params(params)
-
-
         while LOG_LIKELIHOOD.value <= cutoff:
-
             incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
             if not incomplete_trials: break
-            
-
             key, tracker = copy.deepcopy(random.choice(incomplete_trials))
-
 
             black_, white_, move_, _= key
             board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
             actual_move = int(move_).bit_length() - 1
 
-
             delta_log_likelihood = 0
-
             while tracker.success_count < tracker.success_threshold:
                 predicted_move = self.model.predict(board)
-                
-
                 if (predicted_move == actual_move):
                     delta_log_likelihood += tracker.record_success()
-
 
                     with trackers.lock:
                         if tracker.success_count == trackers[key].success_count + 1:
@@ -243,36 +197,19 @@ class Fitter:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                     break
                 
-
                 else:
                     delta_log_likelihood += tracker.record_failure()
-
-
                     if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
-
                         with trackers.lock:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
     def log_likelihood(self, params, data: pd.DataFrame):
         """
-        Calculate the log likelihood of the model given the parameters and data.
-        Parameters:
-        -----------
-        params : array-like
-            The parameters of the model.
-        data : pd.DataFrame
-            The data to fit the model to. Each row represents a trial.
-        Returns:
-        --------
-        np.ndarray
-            An array of log likelihood values for each tracker.
-        Notes:
-        ------
-        - This function uses parallel processing to speed up the computation of log likelihoods.
-        - The `shared_trackers` dictionary is used to store the IBSTracker instances for each trial.
-        - The `LOG_LIKELIHOOD` global variable is updated with the initial log likelihood value.
-        - The `POOL` global variable is used to manage the pool of worker processes.
+        Calculate log-likelihood of the model given parameters and data.
+        
+        Uses parallel processing with IBSTracker instances for each trial.
+        Returns an array of log-likelihood values.
         """
         tick = time()
         n_trials = len(data)
@@ -311,29 +248,19 @@ class Fitter:
         print(f"Running evaluation with {n_iters} iterations...")
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
-    def fit(self, data: pd.DataFrame, manual_seed = None, bads_options={
+    def fit(self, data: pd.DataFrame, manual_seed=None, bads_options={
                     'uncertainty_handling': True,
                     'noise_final_samples': 0,
                     'max_fun_evals': 2000
                   }):
         """
-        Fits the model to the provided data using the BADS optimization algorithm.
-        Parameters:
-        data (pd.DataFrame): The input data to fit the model to.
-        bads_options (dict, optional): Options for the BADS optimizer. Defaults to:
-            {
-                'uncertainty_handling': True,
-                'noise_final_samples': 0,
-                'max_fun_evals': 500
-            }
+        Fit the model to data using BADS optimization.
+        
+        Performs initial log-likelihood estimation, runs BADS optimizer,
+        then performs final log-likelihood estimation.
+        
         Returns:
-        tuple: A tuple containing:
-            - out_params (np.ndarray): The optimized parameters.
-            - final_LL (float): The final log-likelihood estimation on the training data
-        Notes:
-        - This method performs initial log-likelihood estimation, runs the BADS optimizer,
-            and then performs final log-likelihood estimation.
-        - The method prints the fitted parameters and log-likelihood estimations during the process.
+            tuple: (optimized_params, final_log_likelihood)
         """
         self.time = time()
         # first check to see if the dataframe is valid
@@ -423,17 +350,11 @@ def set_seeds(base_seed, thread_id):
 
 def initialize_thread_pool(num_threads, manual_seed=None):
     """
-    Initializes a thread pool with a specified number of threads and an optional manual seed.
+    Initialize thread pool for parallel log-likelihood computation.
+    
     Args:
-        num_threads (int): The number of threads to initialize in the pool.
-        manual_seed (int, optional): A manual seed for random number generation. 
-                                     This can only be used with a single thread. 
-                                     If more than one thread is specified, an assertion error will be raised.
-    Raises:
-        AssertionError: If `manual_seed` is provided and `num_threads` is greater than 1.
-    Notes:
-        - The function initializes a global variable `LOG_LIKELIHOOD` to be shared among threads.
-        - If `manual_seed` is provided, it sets a unique seed for the single thread and prints the seed information.
+        num_threads: Number of threads to initialize
+        manual_seed: Optional seed (only valid with num_threads=1)
     """
     global LOG_LIKELIHOOD, POOL
     LOG_LIKELIHOOD = Value('d', 0)
@@ -444,21 +365,12 @@ def initialize_thread_pool(num_threads, manual_seed=None):
         print(f"Manual seed: {manual_seed}")
         POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
 
-def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16, subsample = None):
+def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16, subsample=None):
     """
-    Perform cross-validation on the given model using the specified folds.
-
-    Parameters:
-    model (Model): The model to be cross-validated.
-    folds (list): A list of dataframes, each representing a fold of the data.
-    leave_out_idx (int): The index of the fold to be used as the test set.
-    threads (int, optional): The number of threads to use for fitting the model. Default is 16.
-
+    Perform cross-validation on the model using specified folds.
+    
     Returns:
-    tuple: A tuple containing the fitted parameters, training log-likelihood, and test log-likelihood.
-
-    Raises:
-    AssertionError: If leave_out_idx is not a valid index in folds.
+        tuple: (fitted_params, training_log_likelihood, test_log_likelihood)
     """
     assert leave_out_idx < len(folds), "Invalid leave-out index!"
 

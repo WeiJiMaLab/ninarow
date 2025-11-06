@@ -112,7 +112,7 @@ class DefaultModel:
         self.cutoff = 3.5
 
         self.x0 = np.array([2. , 0.3, 0.2, 0.1, 1.2, 0.8, 1. , 0.4, 3.5, 8. ], dtype=np.float32)
-        self.ub = np.array([10.,  1.,  1.,  1.,  4., 10., 10., 10., 10., 12.], dtype=np.float32)
+        self.ub = np.array([10.,  1.,  1.,  1.,  4., 10., 10., 10., 10., 10.], dtype=np.float32)
         self.lb = np.array([  0.1 ,   0.01,   0.  ,   0.05,   0.25, -10.  , -10.  , -10.  ,
        -10.  , -10.  ], dtype=np.float32)
         self.pub = np.array([ 6. ,  0.9,  0.5,  0.5,  2. ,  5. ,  5. ,  5. ,  5. , 10. ], dtype=np.float32)
