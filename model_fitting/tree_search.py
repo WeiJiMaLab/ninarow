@@ -20,11 +20,15 @@ from abc import ABC, abstractmethod
 import uuid
 from time import time
 import sys
+import fourbynine
+from fourbynine import DoubleVector
 from feature_generator import (
     make_features_from_groups, 
     create_modular_heuristic,
     DEFAULT_TEMPLATES,
-    DEFAULT_FEATURE_WEIGHTS
+    DEFAULT_FEATURE_WEIGHTS,
+    build_control_params,
+    create_feature
 )
 
 def get_shallow_size(obj):
@@ -67,8 +71,9 @@ class TreeSearch(Model):
     Modular tree search model that constructs heuristics from templates.
     
     The model accepts custom templates and weights, allowing flexible heuristic
-    construction. Features are generated from templates and assembled into a
-    heuristic using create_modular_heuristic.
+    construction. Features are generated from templates once during initialization
+    and cached for efficient reuse. The create_heuristic method uses cached values
+    to avoid redundant computation during parameter optimization.
     """
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         super().__init__()
@@ -88,18 +93,16 @@ class TreeSearch(Model):
         ]
 
         # Feature templates and weights (modular design)
-        self.templates = templates if templates is not None else DEFAULT_TEMPLATES
+        self.templates = DEFAULT_TEMPLATES if templates is None else templates
+        self.sorted_groups = sorted(self.templates.keys())
         self.features = make_features_from_groups(self.templates)
-        
-        # Use default weights if None provided
-        if initial_weights is None:
-            initial_weights = DEFAULT_FEATURE_WEIGHTS
+        self.initial_weights = DEFAULT_FEATURE_WEIGHTS if initial_weights is None else initial_weights
 
         # Add feature weight parameters (one per template group)
-        for group in sorted(self.templates.keys()):
+        for group in self.sorted_groups:
             self.parameter_list.append({
                 "name": group,
-                "initial_value": initial_weights[group],
+                "initial_value": self.initial_weights[group],
                 "lower_bound": -10,
                 "upper_bound": 10,
                 "plausible_lower_bound": -5,
@@ -114,6 +117,45 @@ class TreeSearch(Model):
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
+    def create_heuristic(self, control_params, feature_weights):
+        """
+        Create heuristic from cached templates and features.
+        
+        This optimized version uses cached sorted_groups and features to avoid
+        redundant computation that would occur in create_modular_heuristic.
+        
+        Args:
+            control_params: Dict with keys: pruning_threshold, stopping_prob, lapse_rate, 
+                           center_weight, opp_scale, feature_drop
+            feature_weights: Dict mapping group names to weights
+        
+        Returns:
+            A heuristic created from cached templates and features
+        """
+        # 1. Create heuristic with control parameters (no features yet)
+        control_vec = build_control_params(control_params)
+        heuristic = fourbynine.fourbynine_heuristic.create(DoubleVector(control_vec), False)
+        
+        # 2. Create feature groups and add features using cached values
+        opp_scale = control_params["opp_scale"]
+        feature_drop = control_params["feature_drop"]
+        
+        for group_name in self.sorted_groups:
+            if group_name not in feature_weights:
+                raise ValueError(f"Group '{group_name}' in templates but not in feature_weights dict")
+            
+            weight = feature_weights[group_name]
+            heuristic.add_feature_group(weight, weight * opp_scale, feature_drop)
+            group_idx = len(heuristic.get_feature_group_weights()) - 1
+            
+            # Add features for this group (using cached features)
+            group_features = self.features[group_name]
+            for pieces, spaces, min_empty in group_features:
+                feature = create_feature(pieces, spaces, min_empty)
+                heuristic.add_feature(group_idx, feature)
+        
+        return heuristic
+
     def set_params(self, params):
         """Set parameters and construct heuristic from templates."""
         assert len(params) == len(self.parameter_list), (
@@ -127,8 +169,8 @@ class TreeSearch(Model):
         # Extract feature weights
         feature_weights = {name: float(params[self.param_names.index(name)]) for name in self.features.keys()}
 
-        # Construct heuristic using modular approach
-        self.heuristic = create_modular_heuristic(control_params, feature_weights, self.templates)
+        # Construct heuristic using optimized cached method
+        self.heuristic = self.create_heuristic(control_params, feature_weights)
         self.heuristic.seed_generator(random.randint(0, 2**64))
     
     def predict(self, board):

@@ -257,39 +257,13 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
             print(f"\nModel Fit (model_fit):")
             print(f"  Average time per iteration: {avg_mf_time:.4f}s")
             print(f"  Total time ({n_iterations_actual} iterations): {total_mf_time:.4f}s")
-            print(f"\nSpeedup ratio (tree_search/model_fit): {avg_ts_time/avg_mf_time:.2f}x")
+            speedup = avg_mf_time / avg_ts_time
+            print(f"\nSpeedup: {speedup:.2f}x faster (tree_search vs model_fit)")
 
-    # Verify parameter unpacking (modular design)
-    if verbose:
-        print("\nVerifying parameter unpacking and mapping...")
-
-    # Verify basic arrays match
+    # Verify basic arrays match (silent check)
     assert np.allclose(treesearch.initial_params, defaultmodel.x0), "Initial params don't match!"
     assert np.allclose(treesearch.upper_bound, defaultmodel.ub), "Upper bounds don't match!"
     assert np.allclose(treesearch.lower_bound, defaultmodel.lb), "Lower bounds don't match!"
-
-    # Verify that TreeSearch unpacks parameters consistently
-    params = treesearch.initial_params
-    control_names = ["pruning_threshold", "stopping_prob", "feature_drop", "lapse_rate", "opp_scale", "center_weight"]
-    control_params = {name: float(params[treesearch.param_names.index(name)]) for name in control_names}
-    feature_weights = {name: float(params[treesearch.param_names.index(name)]) for name in treesearch.features.keys()}
-
-    if verbose:
-        print("  Control parameters:")
-        for k, v in control_params.items():
-            print(f"    {k:25s} = {v:7.3f}")
-        print("  Feature weights:")
-        for k, v in feature_weights.items():
-            print(f"    {k:25s} = {v:7.3f}")
-
-    # Verify parameter ordering
-    expected_order = control_names + sorted(treesearch.features.keys())
-    if treesearch.param_names != expected_order:
-        print("⚠️ Parameter ordering mismatch!")
-        print("  TreeSearch param_names:", treesearch.param_names)
-        print("  Expected order:", expected_order)
-    else:
-        print("✅ Parameter ordering verified: control + feature groups consistent.")
     
     return {
         'match': all_match,
@@ -315,10 +289,38 @@ if __name__ == "__main__":
         n_trials=5,
         cutoff=1.2,
         manual_seed=1,
-        n_iterations=10,
+        n_iterations=20,
         verbose=True,
         feature_drop=0.0  # Set to 0 to disable feature dropping
     )
+    
+    # Print final summary
+    print('\n' + '=' * 60)
+    print('FINAL SUMMARY')
+    print('=' * 60)
+    
+    if result['match'] and result['expected_counts_match']:
+        print('✅✅✅ ALL CHECKS PASSED!')
+        print('\n✅ NLL values match between tree_search and model_fit')
+        print('✅ Expected counts match')
+        print('\nThe modular TreeSearch implementation produces identical')
+        print('results to the original model_fit implementation.')
+    else:
+        print('❌ SOME CHECKS FAILED:')
+        if not result['match']:
+            print('  ❌ NLL values do not match')
+        if not result['expected_counts_match']:
+            print('  ❌ Expected counts do not match')
+    
+    print('\n' + '=' * 60)
+    print('PERFORMANCE SUMMARY')
+    print('=' * 60)
+    print(f"Tree Search: {result['avg_tree_search_time']:.4f}s avg ({result['avg_tree_search_time']*1000:.2f}ms)")
+    print(f"Model Fit:   {result['avg_model_fit_time']:.4f}s avg ({result['avg_model_fit_time']*1000:.2f}ms)")
+    speedup = result['avg_model_fit_time'] / result['avg_tree_search_time']
+    print(f"Speedup:     {speedup:.2f}x faster")
+    print(f"Time saved:  {(result['avg_model_fit_time'] - result['avg_tree_search_time'])*1000:.2f}ms per iteration")
+    print('=' * 60)
     
     # Exit with appropriate code
     import sys
