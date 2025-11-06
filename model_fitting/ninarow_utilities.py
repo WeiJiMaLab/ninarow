@@ -36,6 +36,7 @@ def bads_parameters_to_model_parameters(params):
 
     Args:
         params: The BADS parameters to convert (of length 10)
+              [pruning, stopping_prob, feature_drop, lapse, c_opp, w_center, 2IAR_CON, 2IAR_DIS, 3IAR, 4IAR]
 
     Returns:
         The corresponding heuristic parameters (of length 58)
@@ -45,6 +46,7 @@ def bads_parameters_to_model_parameters(params):
             "Parameter file must contain 10 parameters: {}".format(params))
     params = list(map(float, params))
     out = [10000.0, params[0], params[1], params[3], 1, 1, params[5]]
+    # Feature weights: params[6:] = [2IAR_CON, 2IAR_DIS, 3IAR, 4IAR]
     out.extend([x for x in params[6:]] * 4)
     out.append(0)
     out.extend([x * params[4] for x in params[6:]] * 4)
