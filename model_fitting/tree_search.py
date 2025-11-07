@@ -16,7 +16,6 @@ from tqdm import tqdm
 from parsers import *
 import pandas as pd
 import pickle
-from abc import ABC, abstractmethod
 import uuid
 from time import time
 import sys
@@ -27,7 +26,6 @@ from feature_generator import (
     create_modular_heuristic,
     DEFAULT_TEMPLATES,
     DEFAULT_FEATURE_WEIGHTS,
-    build_control_params,
     create_feature
 )
 
@@ -39,34 +37,7 @@ def get_shallow_size(obj):
         size += sum(sys.getsizeof(v) for v in obj.values())
     return size
     
-class Model(ABC):
-    """
-    Abstract base class for models.
-    """
-
-    @abstractmethod
-    def set_params(self, params):
-        pass
-
-    @abstractmethod
-    def predict(self, board):
-        pass
-
-    def save(self, filename):
-        """Save the model to a file using pickle."""
-        with open(filename, 'wb') as f:
-            pickle.dump(self, f)
-
-    @staticmethod
-    def load(filename):
-        """Load the model from a file using pickle."""
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-
-    def __call__(self, board):
-        return self.predict(board)
-
-class TreeSearch(Model):
+class TreeSearch:
     """
     Modular tree search model that constructs heuristics from templates.
     
@@ -76,7 +47,6 @@ class TreeSearch(Model):
     to avoid redundant computation during parameter optimization.
     """
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
-        super().__init__()
         self.name = self.__class__.__name__
         self.expt_factor = 1.0
         self.cutoff = 3.5
@@ -117,60 +87,42 @@ class TreeSearch(Model):
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
-    def create_heuristic(self, control_params, feature_weights):
+    def create_heuristic(self, control_vec, feature_vec):
         """
-        Create heuristic from cached templates and features.
-        
-        This optimized version uses cached sorted_groups and features to avoid
-        redundant computation that would occur in create_modular_heuristic.
+        Construct heuristic directly from ordered parameter arrays.
         
         Args:
-            control_params: Dict with keys: pruning_threshold, stopping_prob, lapse_rate, 
-                           center_weight, opp_scale, feature_drop
-            feature_weights: Dict mapping group names to weights
+            control_vec: [pruning_threshold, stopping_prob, feature_drop, lapse_rate, opp_scale, center_weight]
+            feature_vec: one weight per template group (sorted)
         
         Returns:
             A heuristic created from cached templates and features
         """
-        # 1. Create heuristic with control parameters (no features yet)
-        control_vec = build_control_params(control_params)
-        heuristic = fourbynine.fourbynine_heuristic.create(DoubleVector(control_vec), False)
-        
-        # 2. Create feature groups and add features using cached values
-        opp_scale = control_params["opp_scale"]
-        feature_drop = control_params["feature_drop"]
-        
-        for group_name in self.sorted_groups:
-            if group_name not in feature_weights:
-                raise ValueError(f"Group '{group_name}' in templates but not in feature_weights dict")
-            
-            weight = feature_weights[group_name]
-            heuristic.add_feature_group(weight, weight * opp_scale, feature_drop)
+        pruning_threshold, stopping_prob, feature_drop, lapse_rate, opp_scale, center_weight = control_vec
+
+        # 1. Initialize heuristic (no features yet)
+        control_params = [
+            10000.0, float(pruning_threshold), float(stopping_prob), float(lapse_rate),
+            1.0, 1.0, float(center_weight)
+        ]
+        heuristic = fourbynine.fourbynine_heuristic.create(DoubleVector(control_params), False)
+
+        # 2. Add feature groups and features
+        for weight, group_name in zip(feature_vec, self.sorted_groups):
+            weight = float(weight)
+            heuristic.add_feature_group(weight, weight * float(opp_scale), float(feature_drop))
             group_idx = len(heuristic.get_feature_group_weights()) - 1
-            
-            # Add features for this group (using cached features)
-            group_features = self.features[group_name]
-            for pieces, spaces, min_empty in group_features:
-                feature = create_feature(pieces, spaces, min_empty)
-                heuristic.add_feature(group_idx, feature)
-        
+            for pieces, spaces, min_empty in self.features[group_name]:
+                heuristic.add_feature(group_idx, create_feature(pieces, spaces, min_empty))
+
         return heuristic
 
     def set_params(self, params):
-        """Set parameters and construct heuristic from templates."""
+        """Set parameters and construct heuristic from templates (vectorized, fixed order)."""
         assert len(params) == len(self.parameter_list), (
             f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
         )
-
-        # Extract control parameters
-        control_names = ["pruning_threshold", "stopping_prob", "feature_drop", "lapse_rate", "opp_scale", "center_weight"]
-        control_params = {name: float(params[self.param_names.index(name)]) for name in control_names}
-
-        # Extract feature weights
-        feature_weights = {name: float(params[self.param_names.index(name)]) for name in self.features.keys()}
-
-        # Construct heuristic using optimized cached method
-        self.heuristic = self.create_heuristic(control_params, feature_weights)
+        self.heuristic = self.create_heuristic(params[:6], params[6:])
         self.heuristic.seed_generator(random.randint(0, 2**64))
     
     def predict(self, board):
@@ -178,13 +130,28 @@ class TreeSearch(Model):
         search = fourbynine.NInARowBestFirstSearch(self.heuristic, board)
         search.complete_search()
         return self.heuristic.get_best_move(search.get_tree()).board_position
+    
+    def __call__(self, board):
+        """Allow TreeSearch to be called directly like a function."""
+        return self.predict(board)
+    
+    def save(self, filename):
+        """Save the model to a file using pickle."""
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(filename):
+        """Load the model from a file using pickle."""
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
         
 class Fitter:
     """
     The main class for finding the best heuristic/search parameter
     fit for a given dataset.
     """
-    def __init__(self, model: Model, threads=16, verbose = False, subsample = None):
+    def __init__(self, model: TreeSearch, threads=16, verbose = False, subsample = None):
         """
         Args:
             model: The model this fitter should use.
@@ -407,7 +374,7 @@ def initialize_thread_pool(num_threads, manual_seed=None):
         print(f"Manual seed: {manual_seed}")
         POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
 
-def cross_validate(model: Model, folds: list, leave_out_idx: int, threads: int = 16, subsample=None):
+def cross_validate(model: TreeSearch, folds: list, leave_out_idx: int, threads: int = 16, subsample=None):
     """
     Perform cross-validation on the model using specified folds.
     

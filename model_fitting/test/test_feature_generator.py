@@ -128,7 +128,17 @@ def test_against_bads_parameters():
     # Create heuristic from scratch using TreeSearch.create_heuristic
     print("2. Creating heuristic using TreeSearch.create_heuristic...")
     ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
-    heuristic_modular = ts.create_heuristic(control_params, weights)
+    # Convert dictionaries to vectors in correct order
+    control_vec = [
+        control_params["pruning_threshold"],
+        control_params["stopping_prob"],
+        control_params["feature_drop"],
+        control_params["lapse_rate"],
+        control_params["opp_scale"],
+        control_params["center_weight"]
+    ]
+    feature_vec = [weights[group] for group in ts.sorted_groups]
+    heuristic_modular = ts.create_heuristic(control_vec, feature_vec)
     
     # Compare them structurally (they will differ in group count)
     print("3. Comparing heuristics...")
@@ -209,7 +219,17 @@ def test_evaluation_equivalence(noise_enabled=False, test_modular=True):
     
     # Modular approach using TreeSearch
     ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
-    heuristic_modular = ts.create_heuristic(control_params, weights)
+    # Convert dictionaries to vectors in correct order
+    control_vec = [
+        control_params["pruning_threshold"],
+        control_params["stopping_prob"],
+        control_params["feature_drop"],
+        control_params["lapse_rate"],
+        control_params["opp_scale"],
+        control_params["center_weight"]
+    ]
+    feature_vec = [weights[group] for group in ts.sorted_groups]
+    heuristic_modular = ts.create_heuristic(control_vec, feature_vec)
     heuristic_name = "TreeSearch.create_heuristic"
     
     # Set noise settings
@@ -313,7 +333,17 @@ def test_functional_equivalence(noise_enabled=False):
     model_params = bads_parameters_to_model_parameters(bads_params)
     heuristic_current = fourbynine_heuristic.create(DoubleVector(model_params), True)
     ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
-    heuristic_modular = ts.create_heuristic(control_params, weights)
+    # Convert dictionaries to vectors in correct order
+    control_vec = [
+        control_params["pruning_threshold"],
+        control_params["stopping_prob"],
+        control_params["feature_drop"],
+        control_params["lapse_rate"],
+        control_params["opp_scale"],
+        control_params["center_weight"]
+    ]
+    feature_vec = [weights[group] for group in ts.sorted_groups]
+    heuristic_modular = ts.create_heuristic(control_vec, feature_vec)
     
     # Set noise settings
     heuristic_current.set_noise_enabled(noise_enabled)
@@ -450,7 +480,17 @@ def test_evaluation_equivalence_on_dataframe(df, n_examples=10, noise_enabled=Fa
     model_params = bads_parameters_to_model_parameters(bads_params)
     heuristic_current = fourbynine_heuristic.create(DoubleVector(model_params), True)
     ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
-    heuristic_modular = ts.create_heuristic(control_params, weights)
+    # Convert dictionaries to vectors in correct order
+    control_vec = [
+        control_params["pruning_threshold"],
+        control_params["stopping_prob"],
+        control_params["feature_drop"],
+        control_params["lapse_rate"],
+        control_params["opp_scale"],
+        control_params["center_weight"]
+    ]
+    feature_vec = [weights[group] for group in ts.sorted_groups]
+    heuristic_modular = ts.create_heuristic(control_vec, feature_vec)
     
     # Set noise settings
     heuristic_current.set_noise_enabled(noise_enabled)
