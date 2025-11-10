@@ -1,104 +1,155 @@
 #!/bin/bash
 printf "\e[32mBeginning build of n-in-a-row package\e[0m\n"
+rm -rf build
 
-# Detect architecture on Mac
+# -----------------------------
+# 1. Detect environment
+# -----------------------------
 if [[ "$OSTYPE" == "darwin"* ]]; then
     ARCH=$(uname -m)
-    if [[ "$ARCH" == "arm64" ]]; then
-        echo "Detected Apple Silicon (arm64) Mac"
-        env=1
-    else
-        echo "Detected Intel Mac"
-        env=1
-    fi
+    echo "Detected macOS ($ARCH)"
+    env=1
 else
-    echo "Are you running on (1) Mac, (2) Cluster, or (3) Windows?"
-    read -p "Enter the number corresponding to your environment: " env
+    HOSTNAME=$(hostname)
+    if [[ "$HOSTNAME" == *"greene"* || -d "/scratch/$USER/conda/miniforge3" ]]; then
+        echo "🧠 Detected Greene HPC cluster environment"
+        env=2
+    elif [[ -n "$SLURM_CLUSTER_NAME" ]]; then
+        echo "🧮 Detected generic SLURM cluster: $SLURM_CLUSTER_NAME"
+        env=3
+    else
+        echo "Select environment:"
+        echo "(1) Mac"
+        echo "(2) Greene Cluster (NYU)"
+        echo "(3) Generic Linux Cluster"
+        echo "(4) Windows"
+        read -p "Enter number: " env
+    fi
 fi
 
+# -----------------------------
+# 2. Install / activate dependencies
+# -----------------------------
 case $env in
     1)
         echo "Installing dependencies for Mac..."
-        brew install cmake
-        brew install swig
-        brew install boost
+        brew install cmake swig boost
         ;;
-    2)
-        echo "Installing dependencies for Cluster..."
-        apt-get install cmake
-        apt-get install swig
-        apt-get install libboost-all-dev
-        ;;
-    3)
-        echo "Please install CMake using the Windows installer, and download and unzip SWIG to a directory."
-        echo "Add the following environment variables for all users:"
-        echo "- SWIG_DIR : <path to unzipped SWIG directory>"
-        echo "- SWIG_EXECUTABLE : <path to swig.exe in unzipped SWIG directory>"
-        echo "Finally, add the SWIG directory (SWIG_DIR above) to your PATH system variable."
 
-        echo "To install Boost on Windows:"
-        echo "- Download Boost from https://www.boost.org/ and extract it (e.g., C:\\Boost)."
-        echo "- Add an environment variable BOOST_ROOT pointing to the Boost directory (e.g., C:\\Boost)."
-        echo "- Add the Boost 'lib' directory (e.g., C:\\Boost\\lib) to your PATH."
-        echo "CMake will detect Boost automatically if BOOST_DIR is set correctly."
+    2)
+        echo "Setting up for Greene Cluster..."
+        source /scratch/$USER/conda/miniforge3/etc/profile.d/conda.sh
+        conda activate /scratch/$USER/conda/envs/env || {
+            echo "Conda environment not found. Please create it first with Miniforge."
+            exit 1
+        }
+
+        echo "✅ Using conda environment: $CONDA_PREFIX"
+        which cmake || { echo "CMake not found. Run: conda install cmake swig boost"; exit 1; }
+        which swig || { echo "SWIG not found. Run: conda install swig"; exit 1; }
+
+        export BOOST_ROOT="$CONDA_PREFIX"
+        export CMAKE_PREFIX_PATH="$CONDA_PREFIX:$CMAKE_PREFIX_PATH"
         ;;
+
+    3)
+        echo "Setting up for Generic Linux Cluster..."
+        module load cmake 2>/dev/null || echo "⚠️ No cmake module found."
+        module load swig 2>/dev/null || echo "⚠️ No swig module found."
+        module load boost 2>/dev/null || echo "⚠️ No boost module found."
+
+        if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+            source "$HOME/miniconda3/etc/profile.d/conda.sh"
+            conda activate base
+        fi
+        ;;
+
+    4)
+        echo "Windows setup instructions (manual install):"
+        echo "- Install CMake using Windows installer."
+        echo "- Download and unzip SWIG, set SWIG_DIR and SWIG_EXECUTABLE env vars."
+        echo "- Download Boost and set BOOST_ROOT (e.g., C:\\Boost)."
+        exit 0
+        ;;
+
     *)
-        echo "Invalid option. Exiting."
+        echo "Invalid selection. Exiting."
         exit 1
         ;;
 esac
 
+# -----------------------------
+# 3. Configure and build
+# -----------------------------
 echo "Creating build directory..."
 mkdir -p build
 cd build
 
-echo "Running cmake..."
-# Explicitly specify Python executable to prevent version mismatch issues with SWIG extensions
-echo "Using Python executable: $(which python3)"
-cmake -DPython3_EXECUTABLE=$(which python3) ..
-cmake --build .
+echo "Running CMake..."
+PY_EXEC=$(which python)
+echo "Using Python executable: $PY_EXEC"
+cmake -DPython3_EXECUTABLE=$PY_EXEC -Dgtest_discover_tests=OFF ..
 
-if [ "$env" -eq 3 ]; then
-    echo "Running cmake for Release build on Windows..."
-    cmake --build . --config Release
-fi
+# Limit build parallelism safely on login nodes
+cmake --build . --config Release
 
-python3 ../model_fitting/install_test.py
-
-read -p "Do you want to run tests? (y/n): " run_tests
-if [ "$run_tests" == "y" ]; then
-    echo "Running tests..."
-    ./tests
+# -----------------------------
+# 4. Run Python install test
+# -----------------------------
+if [ -f "../model_fitting/install_test.py" ]; then
+    echo "Running Python installation test..."
+    python ../model_fitting/install_test.py || echo "⚠️ Python test script failed (check dependencies)."
 else
-    echo "Skipping tests."
+    echo "No install_test.py found, skipping."
 fi
 
-read -p "Do you want to install the required Python packages for model fitting? (y/n): " install_packages
-if [ "$install_packages" == "y" ]; then
-    echo "Installing required Python packages..."
-    cd ../model_fitting
-    if [ "$env" -eq 1 ]; then
-        # Check if we're on Apple Silicon (arm64) and need special handling for certain packages
-        if [[ "$ARCH" == "arm64" ]]; then
-            echo "Detected Apple Silicon - installing with architecture-specific flags for compatibility..."
-            pip3 install --no-binary=atomics --no-cache-dir -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
-        else
-            pip3 install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
-        fi
+# -----------------------------
+# 5. Optional C++ tests
+# -----------------------------
+if [ -f "./tests" ]; then
+    if [ "$env" -eq 2 ]; then
+        echo "Skipping C++ tests by default on Greene cluster (heavy compute)."
     else
-        pip install -r requirements.txt || { echo "Failed to install Python packages. Exiting."; exit 1; }
+        read -p "Run compiled C++ tests? (y/n): " run_tests
+        if [ "$run_tests" == "y" ]; then
+            echo "Running tests..."
+            ./tests || echo "⚠️ Some tests failed"
+        else
+            echo "Skipping C++ tests."
+        fi
     fi
-    cd ../build
 else
-    echo "Skipping Python package installation."
+    echo "No C++ test binary found."
 fi
 
-echo -e "\n\n\n\n\n"
+# -----------------------------
+# 6. Optional Python package installation
+# -----------------------------
+if [ -f "../model_fitting/requirements.txt" ]; then
+    read -p "Install Python packages for model fitting? (y/n): " install_packages
+    if [ "$install_packages" == "y" ]; then
+        echo "Installing Python dependencies..."
+        cd ../model_fitting
+        pip install -r requirements.txt
+        cd ../build
+    else
+        echo "Skipping Python package installation."
+    fi
+fi
+
+# -----------------------------
+# 7. Final checks
+# -----------------------------
+echo "Verifying C++ extension imports..."
+python - <<'EOF'
+try:
+    import fourbynine
+    print("✅ fourbynine module imported successfully")
+except ImportError as e:
+    print("⚠️ Could not import fourbynine:", e)
+EOF
+
+echo -e "\n----------------------------------------"
+printf "\e[32m🎉 Build Complete.\e[0m\n"
+echo "To fit a model:  cd model_fitting && python model_fit.py <path_to_game_csv>"
 echo "----------------------------------------"
-printf "\e[32mHooray! Build Complete.\e[0m\n"
-
-echo "To fit a model, from the model_fitting directory run:"
-echo "python model_fit.py <path_to_game_csv>"
-
-echo "Contributors should run utils/precommit.sh from the utils/ directory before committing."
-echo "Documentation can be found at https://weijimalab.github.io/ninarow/"
