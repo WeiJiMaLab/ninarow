@@ -260,7 +260,9 @@ class Fitter:
     def fit(self, data: pd.DataFrame, manual_seed=None, bads_options={
                     'uncertainty_handling': True,
                     'noise_final_samples': 0,
-                    'max_fun_evals': 2000
+                    'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
+                    'tol_fun': 1e-3,              # Loosened from default ~1e-4 (10x looser)
+                    'tol_mesh': 1e-4              # Loosened from default ~1e-6 (100x looser)
                   }):
         """
         Fit the model to data using BADS optimization.
