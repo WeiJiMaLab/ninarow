@@ -86,6 +86,7 @@ class TreeSearch:
         self.lower_bound = np.array([param["lower_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
+        print("Parameter names:", self.param_names)
 
     def create_heuristic(self, control_vec, feature_vec):
         """

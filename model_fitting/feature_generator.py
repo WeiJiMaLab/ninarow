@@ -9,15 +9,19 @@ except ImportError:
 # Default templates matching Julia structure
 DEFAULT_TEMPLATES = {
     "4IAR": [[1, 1, 1, 1]],
-    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+    "3IAR_CON": [[0, 1, 1, 1], [1, 1, 1, 0]],
+    "3IAR_DIS": [[1, 0, 1, 1], [1, 1, 0, 1]],
     "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
     "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+    "1IAR": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
 }
 
 DEFAULT_FEATURE_WEIGHTS = {
+    "1IAR": 0.1,
     "2IAR_CON": 1.0,
-    "2IAR_DIS": 0.4,
-    "3IAR": 3.5,
+    "2IAR_DIS": 0.5,
+    "3IAR_CON": 3.0,
+    "3IAR_DIS": 2.0,
     "4IAR": 8.0,
 }
 
