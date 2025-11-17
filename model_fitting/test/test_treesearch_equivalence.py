@@ -82,17 +82,17 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         print()
 
     templates = {
-        "4IAR": [[1, 1, 1, 1]],
-        "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
         "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
         "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+        "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+        "4IAR": [[1, 1, 1, 1]],
     }
 
     weights = {
-        "4IAR": 8.0,
-        "3IAR": 3.5,
         "2IAR_CON": 1.0,
         "2IAR_DIS": 0.4,
+        "3IAR": 3.5,
+        "4IAR": 9.0,
     }
     
     # Setup tree_search (modular implementation)
@@ -110,12 +110,11 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
     # Setup model_fit (original implementation)
     defaultmodel = DefaultModel()
     defaultmodel.cutoff = cutoff
-    # Override feature_drop parameter by modifying x0 directly
-    # Parameter order: [pruning, stopping_prob, feature_drop, lapse, c_opp, w_center, ...]
-    if len(defaultmodel.x0) >= 3:  # feature_drop is at index 2
-        defaultmodel.x0[2] = feature_drop
-        defaultmodel.lb[2] = feature_drop
-        defaultmodel.ub[2] = feature_drop
+    defaultmodel.x0 = [treesearch.initial_params[i] for i in range(len(treesearch.initial_params))]
+    defaultmodel.ub = [treesearch.upper_bound[i] for i in range(len(treesearch.upper_bound))]
+    defaultmodel.lb = [treesearch.lower_bound[i] for i in range(len(treesearch.lower_bound))]
+    defaultmodel.pub = [treesearch.plausible_upper_bound[i] for i in range(len(treesearch.plausible_upper_bound))]
+    defaultmodel.plb = [treesearch.plausible_lower_bound[i] for i in range(len(treesearch.plausible_lower_bound))]
     model_fitter = ModelFitter(
         args=Prodict({'threads': 1, 'random_sample': False, 'verbose': False}), 
         model=defaultmodel

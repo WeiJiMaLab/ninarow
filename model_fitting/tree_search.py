@@ -47,19 +47,19 @@ class TreeSearch:
     to avoid redundant computation during parameter optimization.
     """
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
-        self.name = self.__class__.__name__
+        self.name = "treesearch"
         self.expt_factor = 1.0
         self.cutoff = 3.5
         self.c = 50
 
         # Control parameters (search behavior)
         self.parameter_list = [
-            {"name": "pruning_threshold", "initial_value": 2.0, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
-            {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.9},
-            {"name": "feature_drop", "initial_value": 0.2, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.5},
-            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.5},
-            {"name": "opp_scale", "initial_value": 1.2, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 0.5, "plausible_upper_bound": 2},
-            {"name": "center_weight", "initial_value": 0.8, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
+            {"name": "pruning_threshold", "initial_value": 1.8, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 4.0},
+            {"name": "stopping_prob", "initial_value": 0.01, "lower_bound": 0.001, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.2},
+            {"name": "feature_drop", "initial_value": 0.25, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.4},
+            {"name": "lapse_rate", "initial_value": 0.05, "lower_bound": 0.01, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.2},
+            {"name": "opp_scale", "initial_value": 2.2, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 1.2, "plausible_upper_bound": 3},
+            {"name": "center_weight", "initial_value": 0.5, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -3, "plausible_upper_bound": 3},
         ]
 
         # Feature templates and weights (modular design)
@@ -73,10 +73,10 @@ class TreeSearch:
             self.parameter_list.append({
                 "name": group,
                 "initial_value": self.initial_weights[group],
-                "lower_bound": -10,
-                "upper_bound": 10,
-                "plausible_lower_bound": -5,
-                "plausible_upper_bound": 5
+                "lower_bound": -5,
+                "upper_bound": 15,
+                "plausible_lower_bound": self.initial_weights[group] - 3,
+                "plausible_upper_bound": self.initial_weights[group] + 3,
             })
 
         # Extract parameter arrays for optimization
@@ -264,7 +264,7 @@ class Fitter:
     def fit(self, data: pd.DataFrame, manual_seed=None, bads_options={
                     'uncertainty_handling': True,
                     'noise_final_samples': 0,
-                    'max_fun_evals': 2000,        # Reduced from 2000 for faster convergence
+                    'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
                   }):
         """
         Fit the model to data using BADS optimization.
@@ -326,23 +326,21 @@ class IBSTracker:
         """Initialize IBSTracker with experiment factor and success threshold."""
         self.success_threshold = success_threshold
         self.expt_factor = expt_factor
+        self.scale_factor = self.expt_factor / self.success_threshold
         # should clarify that this is the negative log likelihood, i.e. it is always positive
         self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
 
     def record_success(self):
         """Record a successful prediction and return the log likelihood diff."""
-        scale_factor = self.expt_factor / self.success_threshold
         self.success_count += 1
-
         self.attempt_count = 0
         # this returns a CONSTANT even though the log likelihood delta is 0
-        return -scale_factor
+        return -self.scale_factor
 
     def record_failure(self):
         """Record a failed prediction and return the log likelihood diff."""
-        scale_factor = self.expt_factor / self.success_threshold
         self.attempt_count += 1
-        delta = scale_factor * (1 / self.attempt_count)
+        delta = self.scale_factor * (1 / self.attempt_count)
         self.log_likelihood += delta
         return delta
     
@@ -355,7 +353,6 @@ def initialize_thread(shared_value):
     LOG_LIKELIHOOD = shared_value
 
 def set_seeds(base_seed, thread_id):
-
     thread_seed = base_seed + thread_id
     random.seed(thread_seed)
     print(f"Thread {thread_id}: seed={thread_seed}, Random number: {random.randint(0, 2**64)}")

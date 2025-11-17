@@ -20,9 +20,9 @@ DEFAULT_FEATURE_WEIGHTS = {
     "1IAR": 0.1,
     "2IAR_CON": 1.0,
     "2IAR_DIS": 0.5,
-    "3IAR_CON": 3.0,
+    "3IAR_CON": 4.0,
     "3IAR_DIS": 2.0,
-    "4IAR": 8.0,
+    "4IAR": 9.5,
 }
 
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
