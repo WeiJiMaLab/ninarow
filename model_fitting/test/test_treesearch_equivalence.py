@@ -65,7 +65,7 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
     random.seed(manual_seed)
     
     # Load data
-    data = [pd.read_csv(f"{data_folder}/{i}.csv") for i in range(5)]
+    data = [pd.read_csv(f"{data_folder}/split_{i}.csv") for i in range(5)]
     train_data = data[fold_idx][:n_trials]
     
     if verbose:
@@ -80,9 +80,23 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         print(f"Manual seed: {manual_seed}")
         print(f"Checking first {n_iterations} iterations")
         print()
+
+    templates = {
+        "4IAR": [[1, 1, 1, 1]],
+        "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+        "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
+        "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+    }
+
+    weights = {
+        "4IAR": 8.0,
+        "3IAR": 3.5,
+        "2IAR_CON": 1.0,
+        "2IAR_DIS": 0.4,
+    }
     
     # Setup tree_search (modular implementation)
-    treesearch = TreeSearch()
+    treesearch = TreeSearch(templates=templates, initial_weights=weights)
     treesearch.cutoff = cutoff
     # Override feature_drop parameter
     treesearch.param_names = treesearch.param_names.copy()
@@ -282,12 +296,12 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
 
 if __name__ == "__main__":
     # Run verification
-    data_folder = "../../monkey_4iar/analysis/data/processed/harry/splits_20000"
+    data_folder = "../../../monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
     result = verify_implementations(
         data_folder=data_folder,
         fold_idx=0,
         n_trials=5,
-        cutoff=1.2,
+        cutoff=1.5,
         manual_seed=1,
         n_iterations=20,
         verbose=True,
