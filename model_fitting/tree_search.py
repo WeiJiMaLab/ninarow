@@ -187,9 +187,11 @@ class Fitter:
         
         self.model.set_params(params)
         while LOG_LIKELIHOOD.value <= cutoff:
-            incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
-            if not incomplete_trials: break
-            key, tracker = copy.deepcopy(random.choice(incomplete_trials))
+            # prevent multiple workers from selecting the same tracker
+            with trackers.lock:
+                incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
+                if not incomplete_trials: break
+                key, tracker = copy.deepcopy(random.choice(incomplete_trials))
 
             black_, white_, move_, _= key
             board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
@@ -202,7 +204,8 @@ class Fitter:
                     delta_log_likelihood += tracker.record_success()
 
                     with trackers.lock:
-                        if tracker.success_count == trackers[key].success_count + 1:
+                        current_tracker = trackers[key] # fresh read of the current tracker to avoid stale data
+                        if tracker.success_count == current_tracker.success_count + 1:
                             trackers[key] = tracker
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                     break
@@ -293,7 +296,6 @@ class Fitter:
         fitted_params = bads.optimize()['x']
 
         print(f"Fitted parameters: {fitted_params}")
-
         print("Final log-likelihood estimation...")
         final_LL = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
@@ -324,6 +326,7 @@ class IBSTracker:
         """Initialize IBSTracker with experiment factor and success threshold."""
         self.success_threshold = success_threshold
         self.expt_factor = expt_factor
+        # should clarify that this is the negative log likelihood, i.e. it is always positive
         self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
 
     def record_success(self):
@@ -331,8 +334,8 @@ class IBSTracker:
         scale_factor = self.expt_factor / self.success_threshold
         self.success_count += 1
 
-
         self.attempt_count = 0
+        # this returns a CONSTANT even though the log likelihood delta is 0
         return -scale_factor
 
     def record_failure(self):
