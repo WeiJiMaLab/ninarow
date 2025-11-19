@@ -29,6 +29,7 @@ from feature_generator import (
     create_feature
 )
 
+
 def get_shallow_size(obj):
     """Calculates the shallow size of a dictionary, including its keys and values."""
     size = sys.getsizeof(obj)
@@ -134,7 +135,8 @@ class TreeSearch:
             f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
         )
         self.heuristic = self.create_heuristic(params[:6], params[6:])
-        self.heuristic.seed_generator(random.randint(0, 2**64))
+        random_seed = random.randint(0, 2**64)
+        self.heuristic.seed_generator(random_seed)
     
     def predict(self, board):
         """Predict the best move for a given board state."""
@@ -360,10 +362,18 @@ class IBSTracker:
     def __repr__(self):
         return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
 
-def initialize_thread(shared_value):
+def initialize_thread(shared_value, worker_counter):
+    with worker_counter.get_lock(): 
+        worker_id = worker_counter.value
+        worker_counter.value += 1
 
     global LOG_LIKELIHOOD
     LOG_LIKELIHOOD = shared_value
+
+    seed = int.from_bytes(os.urandom(8), 'little') ^ (worker_id * 15485863)
+    random.seed(seed)
+    np.random.seed(seed & 0xFFFFFFFF)
+    print(f"[Worker {worker_id}] seed={seed}, rnd={random.randint(0, 2**64)}")
 
 def set_seeds(base_seed, thread_id):
     thread_seed = base_seed + thread_id
@@ -381,7 +391,8 @@ def initialize_thread_pool(num_threads, manual_seed=None):
     """
     global LOG_LIKELIHOOD, POOL
     LOG_LIKELIHOOD = Value('d', 0)
-    POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD,))
+    worker_counter = Value('i', 0)
+    POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD, worker_counter))
 
     if manual_seed is not None:
         assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
