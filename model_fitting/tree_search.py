@@ -86,7 +86,17 @@ class TreeSearch:
         self.lower_bound = np.array([param["lower_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
-        print("Parameter names:", self.param_names)
+
+        print(f"{'Parameter':>20} : {'lo':>8} {'plo':>8} {'x0':>8} {'phi':>8} {'hi':>8}")
+        for p in self.parameter_list:
+            print(
+                f"{p['name']:>20} : "
+                f"{p['lower_bound']:>8.3f} "
+                f"{p['plausible_lower_bound']:>8.3f} "
+                f"{p['initial_value']:>8.3f} "
+                f"{p['plausible_upper_bound']:>8.3f} "
+                f"{p['upper_bound']:>8.3f}"
+            )
 
     def create_heuristic(self, control_vec, feature_vec):
         """
@@ -252,13 +262,13 @@ class Fitter:
             data = self.data
 
         log_likelihood = self.log_likelihood(x, data).sum()
-        if self.verbose: print(f"\t[BADS-{self.iteration_count}]\t time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
+        if self.verbose: print(f"{'[BADS-' + str(self.iteration_count) + ']':>20} time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
         return log_likelihood
     
     def evaluate(self, params, data: pd.DataFrame, n_iters = 10):
         """Evaluates the log-likelihood of the given parameters on the given data."""
-        print(f"Running evaluation with {n_iters} iterations...")
+        print(f"{'[Evaluation]':>20} Running evaluation with {n_iters} iterations...")
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
     def fit(self, 
@@ -282,25 +292,24 @@ class Fitter:
         self.time = time()
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
-
-        print("Initializing thread pool...")
+        print(f"{'[Initializing]':>20} Thread pool with {self.num_workers} threads")
         initialize_thread_pool(self.num_workers, manual_seed = manual_seed)
 
         self.data = data
 
         if not use_expected_counts:
-            print("Skipping expected counts calculation, setting all expected counts to 1")
+            print(f"{'[Expected Counts]':>20} Skipping expected counts calculation, setting all expected counts to 1")
             self.data["expected_counts"] = 1
         else:
-            print("Calculating expected counts...")
+            print(f"{'[Expected Counts]':>20} Calculating expected counts...")
             initial_LL = self.evaluate(self.model.initial_params, data)
             self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']
 
-        print(f"Fitted parameters: {fitted_params}")
-        print("Final log-likelihood estimation...")
+        print(f"\t[Fitted Parameters]\t {fitted_params}")
+        print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
         final_LL = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
     
