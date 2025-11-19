@@ -49,7 +49,7 @@ class TreeSearch:
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         self.name = "treesearch"
         self.expt_factor = 1.0
-        self.cutoff = 3.5
+        self.cutoff = 2.5
         self.c = 50
 
         # Control parameters (search behavior)
@@ -261,11 +261,15 @@ class Fitter:
         print(f"Running evaluation with {n_iters} iterations...")
         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
 
-    def fit(self, data: pd.DataFrame, manual_seed=None, bads_options={
-                    'uncertainty_handling': True,
-                    'noise_final_samples': 0,
-                    'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
-                  }):
+    def fit(self, 
+            data: pd.DataFrame, 
+            manual_seed=None, 
+            use_expected_counts=False,
+            bads_options={
+                            'uncertainty_handling': True,
+                            'noise_final_samples': 0,
+                            'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
+                        }):
         """
         Fit the model to data using BADS optimization.
         
@@ -284,13 +288,13 @@ class Fitter:
 
         self.data = data
 
-        self.data["expected_counts"] = 1
-
-        print("Initial log-likelihood estimation...")
-
-        initial_LL = self.evaluate(self.model.initial_params, data)
-        self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
-
+        if not use_expected_counts:
+            print("Skipping expected counts calculation, setting all expected counts to 1")
+            self.data["expected_counts"] = 1
+        else:
+            print("Calculating expected counts...")
+            initial_LL = self.evaluate(self.model.initial_params, data)
+            self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
 
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']
