@@ -50,7 +50,7 @@ class TreeSearch:
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         self.name = "treesearch"
         self.expt_factor = 1.0
-        self.cutoff = 2.5
+        self.cutoff = 3.5
         self.c = 50
 
         # Control parameters (search behavior)
@@ -229,6 +229,8 @@ class Fitter:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
+    def worker_log_likelihood(self, params, )
+
     def log_likelihood(self, params, data: pd.DataFrame):
         """
         Calculate log-likelihood of the model given parameters and data.
@@ -263,6 +265,7 @@ class Fitter:
         else:
             data = self.data
 
+        self.time = time()
         log_likelihood = self.log_likelihood(x, data).sum()
         if self.verbose: print(f"{'[BADS-' + str(self.iteration_count) + ']':>20} time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
         self.iteration_count += 1
