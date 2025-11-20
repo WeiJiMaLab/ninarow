@@ -229,8 +229,6 @@ class Fitter:
                             LOG_LIKELIHOOD.value += delta_log_likelihood
                         break
 
-    def worker_log_likelihood(self, params, )
-
     def log_likelihood(self, params, data: pd.DataFrame):
         """
         Calculate log-likelihood of the model given parameters and data.
