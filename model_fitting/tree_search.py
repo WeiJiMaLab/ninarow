@@ -56,11 +56,11 @@ class TreeSearch:
         # Control parameters (search behavior)
         self.parameter_list = [
             {"name": "pruning_threshold", "initial_value": 2.3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 4.0},
-            {"name": "stopping_prob", "initial_value": 0.05, "lower_bound": 0.001, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.2},
+            {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.9},
             {"name": "feature_drop", "initial_value": 0.25, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.4},
-            {"name": "lapse_rate", "initial_value": 0.05, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.2},
-            {"name": "opp_scale", "initial_value": 2.3, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 1.2, "plausible_upper_bound": 3},
-            {"name": "center_weight", "initial_value": 0.2, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -3, "plausible_upper_bound": 3},
+            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.5},
+            {"name": "opp_scale", "initial_value": 1, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 1.2, "plausible_upper_bound": 3},
+            {"name": "center_weight", "initial_value": 0.1, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -3, "plausible_upper_bound": 3},
         ]
 
         # Feature templates and weights (modular design)
@@ -437,10 +437,8 @@ def main():
     print(f"Output directory: {output_path}")
     os.makedirs(output_path, exist_ok = True)
 
-
     assert np.all([f"{i + 1}.csv" in os.listdir(data_path) for i in range(n_splits)])
     print("Loading splits...")
-
 
     splits = [pd.read_csv(f"{data_path}/{i + 1}.csv") for i in range(n_splits)]
 
