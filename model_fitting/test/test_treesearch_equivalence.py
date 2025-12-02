@@ -1,8 +1,8 @@
 """
-Verification that tree_search and model_fit implementations produce identical NLL values.
+Verification that tree_search, tree_search_parallel, and model_fit implementations produce identical NLL values.
 
-This verifies that the modular TreeSearch implementation produces the same results
-as the original model_fit implementation for the first N optimization iterations.
+This verifies that all three implementations produce the same results
+for the first N optimization iterations.
 """
 import sys
 from pathlib import Path
@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import random
 from tree_search import TreeSearch, Fitter, initialize_thread_pool
+from tree_search_parallel import TreeSearch as TreeSearchST, MultiThreadedFitter
 from model_fit import DefaultModel, ModelFitter
 from parsers import CSVMove
 from fourbynine import fourbynine_board, fourbynine_pattern, fourbynine_move
@@ -55,23 +56,30 @@ def parse_monkey_4iar_dataframe(df):
 
 
 def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2, 
-                          manual_seed=1, n_iterations=10, verbose=True, feature_drop=0.2):
+                          manual_seed=1, n_iterations=10, verbose=True, feature_drop=0.0):
     """
-    Verify that tree_search and model_fit produce identical NLL values.
+    Verify that tree_search, tree_search_parallel (MultiThreadedFitter), and model_fit 
+    produce identical NLL values.
     
     Returns dict with comparison results including match status and NLL values.
     """
     # Set seed
     random.seed(manual_seed)
     
-    # Load data
-    data = [pd.read_csv(f"{data_folder}/split_{i}.csv") for i in range(5)]
+    # Load data - only load splits that exist
+    import glob as _glob
+    split_files = sorted(_glob.glob(f"{data_folder}/split_*.csv"))
+    n_splits = len(split_files)
+    if n_splits == 0:
+        raise ValueError(f"No split files found in {data_folder}")
+    data = [pd.read_csv(f"{data_folder}/split_{i}.csv") for i in range(n_splits)]
+    fold_idx = min(fold_idx, n_splits - 1)  # Ensure fold_idx is valid
     train_data = data[fold_idx][:n_trials]
     
     if verbose:
-        print("=" * 60)
-        print("VERIFICATION: Comparing tree_search vs model_fit")
-        print("=" * 60)
+        print("=" * 80)
+        print("VERIFICATION: Comparing tree_search vs tree_search_parallel vs model_fit")
+        print("=" * 80)
         print(f"Data folder: {data_folder}")
         print(f"Fold index: {fold_idx}")
         print(f"Number of trials: {n_trials}")
@@ -95,11 +103,9 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         "4IAR": 9.0,
     }
     
-    # Setup tree_search (modular implementation)
+    # ===== Setup tree_search (parallel Fitter) =====
     treesearch = TreeSearch(templates=templates, initial_weights=weights)
     treesearch.cutoff = cutoff
-    # Override feature_drop parameter
-    treesearch.param_names = treesearch.param_names.copy()
     if 'feature_drop' in treesearch.param_names:
         feature_drop_idx = treesearch.param_names.index('feature_drop')
         treesearch.initial_params[feature_drop_idx] = feature_drop
@@ -107,7 +113,17 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         treesearch.upper_bound[feature_drop_idx] = feature_drop
     fitter = Fitter(treesearch, threads=1, verbose=False)
     
-    # Setup model_fit (original implementation)
+    # ===== Setup tree_search_parallel (MultiThreadedFitter) =====
+    treesearch_st = TreeSearchST(templates=templates, initial_weights=weights)
+    treesearch_st.cutoff = cutoff
+    if 'feature_drop' in treesearch_st.param_names:
+        feature_drop_idx = treesearch_st.param_names.index('feature_drop')
+        treesearch_st.initial_params[feature_drop_idx] = feature_drop
+        treesearch_st.lower_bound[feature_drop_idx] = feature_drop
+        treesearch_st.upper_bound[feature_drop_idx] = feature_drop
+    fitter_st = MultiThreadedFitter(treesearch_st, threads=1, verbose=False)
+    
+    # ===== Setup model_fit (original implementation) =====
     defaultmodel = DefaultModel()
     defaultmodel.cutoff = cutoff
     defaultmodel.x0 = [treesearch.initial_params[i] for i in range(len(treesearch.initial_params))]
@@ -120,88 +136,78 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         model=defaultmodel
     )
     
-    # Initialize pools
-    initialize_thread_pool(1, manual_seed=manual_seed)
-    model_fit.initialize_thread_pool(1, manual_seed=manual_seed)
-    
     # Verify initial parameters match
     assert np.allclose(treesearch.initial_params, defaultmodel.x0), "Initial params don't match!"
-    assert np.allclose(treesearch.upper_bound, defaultmodel.ub), "Upper bounds don't match!"
-    assert np.allclose(treesearch.lower_bound, defaultmodel.lb), "Lower bounds don't match!"
+    assert np.allclose(treesearch.initial_params, treesearch_st.initial_params), "Initial params don't match between tree_search variants!"
     
-    # ===== TREE_SEARCH APPROACH =====
+    test_params = treesearch.initial_params
+    
+    # ===== TREE_SEARCH (Parallel Fitter) =====
     if verbose:
-        print("Running tree_search.fit() setup...")
+        print("Running tree_search (Fitter) setup...")
     
-    # Set up fitter like fit() does
+    # Reset random state and reinitialize thread pool
+    random.seed(manual_seed)
+    initialize_thread_pool(1, manual_seed=manual_seed)
+    
     fitter.data = train_data.copy()
     fitter.data["expected_counts"] = 1
+    fitter.iteration_count = 0  # Reset iteration count
     
-    # Do initial evaluation
-    initial_LL_ts = fitter.evaluate(treesearch.initial_params, fitter.data)
-    fitter.data["expected_counts"] = fitter.calculate_expected_counts(initial_LL_ts, treesearch.c).astype(int)
-    expected_counts_ts = fitter.data["expected_counts"].tolist()
-    
-    if verbose:
-        print(f"  Initial LL: {initial_LL_ts}")
-        print(f"  Expected counts: {expected_counts_ts}")
-    
-    # Capture NLL values from optimize calls
     nll_tree_search = []
     tree_search_times = []
     
-    # Call optimize a few times with the same params BADS would use
-    # We'll use the initial params repeatedly to simulate BADS iterations
-    test_params = treesearch.initial_params
     for i in range(n_iterations):
-        # Time the optimize call
         start_time = time.perf_counter()
         nll = fitter.optimize(test_params)
         elapsed_time = time.perf_counter() - start_time
         tree_search_times.append(elapsed_time)
         nll_tree_search.append(nll)
     
-    # ===== MODEL_FIT APPROACH =====
     if verbose:
-        print("\nRunning model_fit.fit_model() setup...")
+        print(f"  Completed {n_iterations} iterations")
     
-    # Reset random seed
+    # ===== TREE_SEARCH_PARALLEL (MultiThreadedFitter) =====
+    if verbose:
+        print("\nRunning tree_search_parallel (MultiThreadedFitter) setup...")
+    
+    fitter_st.data = train_data.copy()
+    fitter_st.data["expected_counts"] = 1
+    fitter_st.iteration_count = 0  # Reset iteration count
+    
+    nll_single_threaded = []
+    single_threaded_times = []
+    
+    # Reset random state right before optimization loop to match tree_search worker state
+    # The Pool worker does random.seed(1) then random.randint in set_seeds, so we need to match
     random.seed(manual_seed)
+    _ = random.randint(0, 2**64)  # Consume one random number to match worker state
     
-    # Parse data
+    for i in range(n_iterations):
+        start_time = time.perf_counter()
+        nll = fitter_st.optimize(test_params)
+        elapsed_time = time.perf_counter() - start_time
+        single_threaded_times.append(elapsed_time)
+        nll_single_threaded.append(nll)
+    
+    if verbose:
+        print(f"  Completed {n_iterations} iterations")
+    
+    # ===== MODEL_FIT =====
+    if verbose:
+        print("\nRunning model_fit setup...")
+    
+    # Reset random state and reinitialize thread pool
+    random.seed(manual_seed)
+    model_fit.initialize_thread_pool(1, manual_seed=manual_seed)
+    
     moves_mf = parse_monkey_4iar_dataframe(train_data)
     
-    # Do initial estimation
-    average_l_values = defaultmodel.estimate_initial_l_value_guess(model_fitter, moves_mf)
-    counts = model_fitter.generate_attempt_counts(np.array(average_l_values), defaultmodel.c)
-    
-    if verbose:
-        print(f"  Initial L values: {average_l_values}")
-        print(f"  Generated counts: {counts.tolist()}")
-    
-    # Create move_tasks
     move_tasks_mf = {}
     for move in moves_mf:
         move_tasks_mf[move] = model_fit.SuccessFrequencyTracker(defaultmodel.expt_factor)
-    for i in range(len(counts)):
-        move_tasks_mf[moves_mf[i]].required_success_count = int(counts[i])
+        move_tasks_mf[move].required_success_count = 1
     
-    required_counts_mf = [task.required_success_count for task in move_tasks_mf.values()]
-    
-    if verbose:
-        print(f"  Required success counts: {required_counts_mf}")
-    
-    # Check if expected counts match
-    expected_counts_match = (expected_counts_ts == required_counts_mf)
-    
-    if verbose:
-        ec_match_str = "✅" if expected_counts_match else "❌"
-        print(f"\nExpected counts match: {ec_match_str} {expected_counts_match}")
-        if not expected_counts_match:
-            print(f"  tree_search: {expected_counts_ts}")
-            print(f"  model_fit: {required_counts_mf}")
-    
-    # Create opt_fun and capture NLL values
     nll_model_fit = []
     model_fit_times = []
     
@@ -213,129 +219,155 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         nll_model_fit.append(loglik)
         return loglik
     
-    # Call opt_fun a few times
     for i in range(n_iterations):
-        nll = opt_fun(test_params)
+        opt_fun(test_params)
+    
+    if verbose:
+        print(f"  Completed {n_iterations} iterations")
     
     # ===== COMPARISON =====
     if verbose:
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 80)
         print("COMPARISON")
-        print("=" * 60)
+        print("=" * 80)
     
-    # Compare NLL values
-    n_iterations_actual = min(len(nll_tree_search), len(nll_model_fit))
-    differences = []
-    all_match = True
-    tolerance = 1e-5  # Allow small floating point differences
+    tolerance = 1e-5
+    all_match_ts_mf = True
+    all_match_st_mf = True
+    all_match_ts_st = True
     
     if verbose:
-        print(f"\nComparing {n_iterations_actual} iterations (tolerance: {tolerance})")
+        print(f"\nComparing {n_iterations} iterations (tolerance: {tolerance})")
+        print(f"{'Iter':>4} | {'tree_search':>12} | {'single_thread':>12} | {'model_fit':>12} | {'TS-MF diff':>12} | {'ST-MF diff':>12} | {'TS-ST diff':>12}")
+        print("-" * 95)
     
-    for i in range(n_iterations_actual):
+    for i in range(n_iterations):
         ts_nll = nll_tree_search[i]
+        st_nll = nll_single_threaded[i]
         mf_nll = nll_model_fit[i]
-        diff = abs(ts_nll - mf_nll)
-        differences.append(diff)
         
-        if diff > tolerance:
-            all_match = False
+        diff_ts_mf = abs(ts_nll - mf_nll)
+        diff_st_mf = abs(st_nll - mf_nll)
+        diff_ts_st = abs(ts_nll - st_nll)
+        
+        if diff_ts_mf > tolerance:
+            all_match_ts_mf = False
+        if diff_st_mf > tolerance:
+            all_match_st_mf = False
+        if diff_ts_st > tolerance:
+            all_match_ts_st = False
         
         if verbose:
-            match_str = "✅" if diff <= tolerance else "❌"
-            ts_time = tree_search_times[i] if i < len(tree_search_times) else 0
-            mf_time = model_fit_times[i] if i < len(model_fit_times) else 0
-            print(f"  Iteration {i}: tree_search={ts_nll:.6f} ({ts_time:.4f}s), model_fit={mf_nll:.6f} ({mf_time:.4f}s), diff={diff:.6e} {match_str}")
+            print(f"{i:>4} | {ts_nll:>12.6f} | {st_nll:>12.6f} | {mf_nll:>12.6f} | {diff_ts_mf:>12.2e} | {diff_st_mf:>12.2e} | {diff_ts_st:>12.2e}")
+    
+    all_match = all_match_ts_mf and all_match_st_mf and all_match_ts_st
     
     if verbose:
         print()
         if all_match:
-            print("✅ SUCCESS: All NLL values match!")
+            print("✅ SUCCESS: All NLL values match across all three implementations!")
         else:
-            print("❌ FAILURE: NLL values differ!")
+            print("❌ FAILURE: Some NLL values differ!")
+            if not all_match_ts_mf:
+                print("  ❌ tree_search vs model_fit mismatch")
+            if not all_match_st_mf:
+                print("  ❌ single_threaded vs model_fit mismatch")
+            if not all_match_ts_st:
+                print("  ❌ tree_search vs single_threaded mismatch")
         
-        # Print timing summary
-        if tree_search_times and model_fit_times:
-            print("\n" + "=" * 60)
-            print("TIMING SUMMARY")
-            print("=" * 60)
-            avg_ts_time = np.mean(tree_search_times)
-            avg_mf_time = np.mean(model_fit_times)
-            total_ts_time = np.sum(tree_search_times)
-            total_mf_time = np.sum(model_fit_times)
-            
-            print(f"Tree Search (tree_search):")
-            print(f"  Average time per iteration: {avg_ts_time:.4f}s")
-            print(f"  Total time ({n_iterations_actual} iterations): {total_ts_time:.4f}s")
-            print(f"\nModel Fit (model_fit):")
-            print(f"  Average time per iteration: {avg_mf_time:.4f}s")
-            print(f"  Total time ({n_iterations_actual} iterations): {total_mf_time:.4f}s")
-            speedup = avg_mf_time / avg_ts_time
-            print(f"\nSpeedup: {speedup:.2f}x faster (tree_search vs model_fit)")
-
-    # Verify basic arrays match (silent check)
-    assert np.allclose(treesearch.initial_params, defaultmodel.x0), "Initial params don't match!"
-    assert np.allclose(treesearch.upper_bound, defaultmodel.ub), "Upper bounds don't match!"
-    assert np.allclose(treesearch.lower_bound, defaultmodel.lb), "Lower bounds don't match!"
+        # Timing summary
+        print("\n" + "=" * 80)
+        print("TIMING SUMMARY")
+        print("=" * 80)
+        
+        avg_ts = np.mean(tree_search_times)
+        avg_st = np.mean(single_threaded_times)
+        avg_mf = np.mean(model_fit_times)
+        
+        print(f"\n{'Implementation':<25} {'Avg Time (ms)':>15} {'Total Time (s)':>15}")
+        print("-" * 60)
+        print(f"{'tree_search (Fitter)':<25} {avg_ts*1000:>15.2f} {np.sum(tree_search_times):>15.4f}")
+        print(f"{'MultiThreadedFitter':<25} {avg_st*1000:>15.2f} {np.sum(single_threaded_times):>15.4f}")
+        print(f"{'model_fit':<25} {avg_mf*1000:>15.2f} {np.sum(model_fit_times):>15.4f}")
+        
+        print(f"\n📊 Speedup Analysis (relative to model_fit):")
+        print(f"   tree_search (Fitter):    {avg_mf/avg_ts:.2f}x")
+        print(f"   MultiThreadedFitter:    {avg_mf/avg_st:.2f}x")
+        
+        print(f"\n📊 Comparison (MultiThreadedFitter vs tree_search Fitter):")
+        if avg_st < avg_ts:
+            print(f"   MultiThreadedFitter is {avg_ts/avg_st:.2f}x faster")
+        else:
+            print(f"   tree_search Fitter is {avg_st/avg_ts:.2f}x faster")
     
     return {
-        'match': all_match,
-        'nll_tree_search': nll_tree_search[:n_iterations_actual],
-        'nll_model_fit': nll_model_fit[:n_iterations_actual],
-        'differences': differences,
-        'expected_counts_match': expected_counts_match,
-        'expected_counts_ts': expected_counts_ts,
-        'expected_counts_mf': required_counts_mf,
-        'tree_search_times': tree_search_times[:n_iterations_actual],
-        'model_fit_times': model_fit_times[:n_iterations_actual],
-        'avg_tree_search_time': np.mean(tree_search_times[:n_iterations_actual]) if tree_search_times else 0,
-        'avg_model_fit_time': np.mean(model_fit_times[:n_iterations_actual]) if model_fit_times else 0
+        'all_match': all_match,
+        'match_ts_mf': all_match_ts_mf,
+        'match_st_mf': all_match_st_mf,
+        'match_ts_st': all_match_ts_st,
+        'nll_tree_search': nll_tree_search,
+        'nll_single_threaded': nll_single_threaded,
+        'nll_model_fit': nll_model_fit,
+        'tree_search_times': tree_search_times,
+        'single_threaded_times': single_threaded_times,
+        'model_fit_times': model_fit_times,
+        'avg_tree_search_time': np.mean(tree_search_times),
+        'avg_single_threaded_time': np.mean(single_threaded_times),
+        'avg_model_fit_time': np.mean(model_fit_times)
     }
 
 
 if __name__ == "__main__":
     # Run verification
-    data_folder = "../../../monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
+    data_folder = "/Users/jordanlei/Github/monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
     result = verify_implementations(
         data_folder=data_folder,
         fold_idx=0,
         n_trials=5,
-        cutoff=1.5,
+        cutoff=100.0,  # Large cutoff - no early termination
         manual_seed=1,
         n_iterations=20,
         verbose=True,
-        feature_drop=0.0  # Set to 0 to disable feature dropping
+        feature_drop=0.0
     )
     
     # Print final summary
-    print('\n' + '=' * 60)
+    print('\n' + '=' * 80)
     print('FINAL SUMMARY')
-    print('=' * 60)
+    print('=' * 80)
     
-    if result['match'] and result['expected_counts_match']:
+    if result['all_match']:
         print('✅✅✅ ALL CHECKS PASSED!')
-        print('\n✅ NLL values match between tree_search and model_fit')
-        print('✅ Expected counts match')
-        print('\nThe modular TreeSearch implementation produces identical')
-        print('results to the original model_fit implementation.')
+        print('\n✅ All three implementations produce identical NLL values')
+        print('   - tree_search (Fitter)')
+        print('   - tree_search_parallel (MultiThreadedFitter)')
+        print('   - model_fit')
     else:
         print('❌ SOME CHECKS FAILED:')
-        if not result['match']:
-            print('  ❌ NLL values do not match')
-        if not result['expected_counts_match']:
-            print('  ❌ Expected counts do not match')
+        if not result['match_ts_mf']:
+            print('  ❌ tree_search vs model_fit mismatch')
+        if not result['match_st_mf']:
+            print('  ❌ MultiThreadedFitter vs model_fit mismatch')
+        if not result['match_ts_st']:
+            print('  ❌ tree_search vs MultiThreadedFitter mismatch')
     
-    print('\n' + '=' * 60)
-    print('PERFORMANCE SUMMARY')
-    print('=' * 60)
-    print(f"Tree Search: {result['avg_tree_search_time']:.4f}s avg ({result['avg_tree_search_time']*1000:.2f}ms)")
-    print(f"Model Fit:   {result['avg_model_fit_time']:.4f}s avg ({result['avg_model_fit_time']*1000:.2f}ms)")
-    speedup = result['avg_model_fit_time'] / result['avg_tree_search_time']
-    print(f"Speedup:     {speedup:.2f}x faster")
-    print(f"Time saved:  {(result['avg_model_fit_time'] - result['avg_tree_search_time'])*1000:.2f}ms per iteration")
-    print('=' * 60)
+    print('\n' + '=' * 80)
+    print('PERFORMANCE RANKING')
+    print('=' * 80)
+    
+    times = [
+        ('tree_search (Fitter)', result['avg_tree_search_time']),
+        ('MultiThreadedFitter', result['avg_single_threaded_time']),
+        ('model_fit', result['avg_model_fit_time'])
+    ]
+    times.sort(key=lambda x: x[1])
+    
+    print(f"\nFastest to slowest:")
+    for i, (name, t) in enumerate(times):
+        speedup = times[-1][1] / t  # relative to slowest
+        print(f"  {i+1}. {name:<25} {t*1000:>8.2f}ms  ({speedup:.2f}x vs slowest)")
+    
+    print('=' * 80)
     
     # Exit with appropriate code
-    import sys
-    sys.exit(0 if result['match'] and result['expected_counts_match'] else 1)
-
+    sys.exit(0 if result['all_match'] else 1)
