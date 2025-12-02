@@ -101,7 +101,7 @@ def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True
         return None
     
     # Thread counts to test
-    thread_counts = [1, 2, 4, 8, 16]
+    thread_counts = [1, 2, 3, 6]
     
     # BADS options - limit to ~10 function evaluations for faster testing
     def get_bads_options():
