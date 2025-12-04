@@ -120,7 +120,7 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         treesearch_st.initial_params[feature_drop_idx] = feature_drop
         treesearch_st.lower_bound[feature_drop_idx] = feature_drop
         treesearch_st.upper_bound[feature_drop_idx] = feature_drop
-    fitter_st = SingleThreadedFitter(treesearch_st, verbose=False)
+    fitter_st = SingleThreadedFitter(treesearch_st, verbose=False, train_repeats=1)
     
     # ===== Setup model_fit (original implementation) =====
     defaultmodel = DefaultModel()
@@ -318,7 +318,7 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
 
 if __name__ == "__main__":
     # Run verification
-    data_folder = "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
+    data_folder = "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/models/2023-02-20"
     result = verify_implementations(
         data_folder=data_folder,
         fold_idx=0,
