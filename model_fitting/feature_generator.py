@@ -8,22 +8,23 @@ except ImportError:
 
 # Default templates matching Julia structure
 DEFAULT_TEMPLATES = {
-    "4IAR":      [[1, 1, 1, 1]],
-    "3IAR_CON":  [[0, 1, 1, 1], [1, 1, 1, 0]],
-    "3IAR_DIS":  [[1, 0, 1, 1], [1, 1, 0, 1]],
-    "2IAR_CON":  [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
-    "2IAR_DIS":  [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+    "4IAR": [[1, 1, 1, 1]],
+    "3IAR_CON": [[0, 1, 1, 1], [1, 1, 1, 0]],
+    "3IAR_DIS": [[1, 0, 1, 1], [1, 1, 0, 1]],
+    "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
+    "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
     "1IAR": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
 }
 
 DEFAULT_FEATURE_WEIGHTS = {
-    "1IAR": -0.6,
-    "2IAR_CON": 1.1,
-    "2IAR_DIS": -0.4,
-    "3IAR_CON": 5.0,
-    "3IAR_DIS": 2.1,
-    "4IAR": 12.5,
+    "1IAR": -0.5,
+    "2IAR_CON": 2.0,
+    "2IAR_DIS": -0.9,
+    "3IAR_CON": 6.0,
+    "3IAR_DIS": 4.0,
+    "4IAR": 15.0,
 }
+
 
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
     """
