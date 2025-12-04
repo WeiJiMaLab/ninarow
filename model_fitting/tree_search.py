@@ -55,12 +55,12 @@ class TreeSearch:
 
         # Control parameters (search behavior)
         self.parameter_list = [
-            {"name": "pruning_threshold", "initial_value": 2.3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 4.0},
+            {"name": "pruning_threshold", "initial_value": 3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
             {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 1.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.9},
-            {"name": "feature_drop", "initial_value": 0.25, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.4},
-            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.01, "plausible_upper_bound": 0.5},
-            {"name": "opp_scale", "initial_value": 1, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 1.2, "plausible_upper_bound": 3},
-            {"name": "center_weight", "initial_value": 0.1, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -3, "plausible_upper_bound": 3},
+            {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.5},
+            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.5},
+            {"name": "opp_scale", "initial_value": 1.2, "lower_bound": 0.25, "upper_bound": 4, "plausible_lower_bound": 0.5, "plausible_upper_bound": 2},
+            {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
         ]
 
         # Feature templates and weights (modular design)
@@ -74,10 +74,10 @@ class TreeSearch:
             self.parameter_list.append({
                 "name": group,
                 "initial_value": self.initial_weights[group],
-                "lower_bound": -5,
-                "upper_bound": 15,
-                "plausible_lower_bound": self.initial_weights[group] - 2,
-                "plausible_upper_bound": self.initial_weights[group] + 2,
+                "lower_bound": -10,
+                "upper_bound": 20,
+                "plausible_lower_bound": -5,
+                "plausible_upper_bound": 15,
             })
 
         # Extract parameter arrays for optimization
@@ -148,6 +148,19 @@ class TreeSearch:
         """Allow TreeSearch to be called directly like a function."""
         return self.predict(board)
     
+    def __getstate__(self):
+        """Exclude heuristic (SwigPyObject) from pickling."""
+        state = self.__dict__.copy()
+        # Remove heuristic as it's a SwigPyObject that can't be pickled
+        if 'heuristic' in state:
+            state['heuristic'] = None
+        return state
+    
+    def __setstate__(self, state):
+        """Restore state after unpickling."""
+        self.__dict__.update(state)
+        # Heuristic will be recreated when set_params is called
+    
     def save(self, filename):
         """Save the model to a file using pickle."""
         with open(filename, 'wb') as f:
@@ -159,120 +172,278 @@ class TreeSearch:
         with open(filename, 'rb') as f:
             return pickle.load(f)
         
-class Fitter:
+# class Fitter:
+#     """
+#     The main class for finding the best heuristic/search parameter
+#     fit for a given dataset.
+#     """
+#     def __init__(self, model: TreeSearch, threads=16, verbose = False, subsample = None):
+#         """
+#         Args:
+#             model: The model this fitter should use.
+#             verbose: Print extra debugging info.
+#             threads: The number of threads to use when fitting.
+#             subsample: If specified, randomly sample up to N positions without replacement.
+#         """
+#         self.model = model
+#         self.verbose = verbose
+#         self.num_workers = threads
+#         self.iteration_count = 0
+#         self.time = time()
+#         self.subsample = subsample
+
+#     def calculate_expected_counts(self, log_likelihoods, c):
+#         """Calculate the expected observation counts for each move based on their L-values."""
+#         x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
+#         dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
+#         p = np.exp(-log_likelihoods).astype(np.float32)
+#         interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
+#         interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
+#         times = (c * interp1(p)) / np.mean(interp2(p))
+#         return np.vectorize(lambda x: max(x, 1))(np.round(times))
+
+#     def parallel_log_likelihood(self, params, trackers: UltraDict, cutoff: float):
+#         """
+#         Compute log-likelihood of model parameters in parallel.
+        
+#         Updates global log-likelihood and trackers for each trial until
+#         the log-likelihood exceeds the cutoff value.
+#         """
+        
+#         self.model.set_params(params)
+#         while LOG_LIKELIHOOD.value <= cutoff:
+#             # prevent multiple workers from selecting the same tracker
+#             with trackers.lock:
+#                 incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
+#                 if not incomplete_trials: break
+#                 key, tracker = copy.deepcopy(random.choice(incomplete_trials))
+
+#             black_, white_, move_, _= key
+#             board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
+#             actual_move = int(move_).bit_length() - 1
+
+#             delta_log_likelihood = 0
+#             while tracker.success_count < tracker.success_threshold:
+#                 predicted_move = self.model.predict(board)
+#                 if (predicted_move == actual_move):
+#                     delta_log_likelihood += tracker.record_success()
+
+#                     with trackers.lock:
+#                         current_tracker = trackers[key] # fresh read of the current tracker to avoid stale data
+#                         if tracker.success_count == current_tracker.success_count + 1:
+#                             trackers[key] = tracker
+#                             LOG_LIKELIHOOD.value += delta_log_likelihood
+#                     break
+                
+#                 else:
+#                     delta_log_likelihood += tracker.record_failure()
+#                     if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
+#                         with trackers.lock:
+#                             LOG_LIKELIHOOD.value += delta_log_likelihood
+#                         break
+
+#     def log_likelihood(self, params, data: pd.DataFrame):
+#         """
+#         Calculate log-likelihood of the model given parameters and data.
+        
+#         Uses parallel processing with IBSTracker instances for each trial.
+#         Returns an array of log-likelihood values.
+#         """
+#         tick = time()
+#         n_trials = len(data)
+
+#         if "expected_counts" not in data.columns:
+#             data["expected_counts"] = 1
+#             print("Warning: 'expected_counts' column not found. Defaulting to 1.")
+
+
+#         trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
+#         assert(len(trackers)) == n_trials
+#         shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , buffer_size=1024 * 1024, shared_lock=True)
+
+#         global LOG_LIKELIHOOD
+#         LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
+
+#         global POOL
+#         results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
+#         [result.get() for result in results]
+
+#         return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
+    
+#     def optimize(self, x): 
+#         if self.subsample: 
+#             data = self.data.sample(self.subsample)
+#         else:
+#             data = self.data
+
+#         self.time = time()
+#         log_likelihood = self.log_likelihood(x, data).sum()
+#         if self.verbose: print(f"{'[BADS-' + str(self.iteration_count) + ']':>20} time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
+#         self.iteration_count += 1
+#         return log_likelihood
+    
+#     def evaluate(self, params, data: pd.DataFrame, n_iters = 50):
+#         """Evaluates the log-likelihood of the given parameters on the given data."""
+#         print(f"{'[Evaluation]':>20} Running evaluation with {n_iters} iterations...")
+#         return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
+
+#     def fit(self, 
+#             data: pd.DataFrame, 
+#             manual_seed=None, 
+#             use_expected_counts=False,
+#             bads_options={
+#                             'uncertainty_handling': True,
+#                             'noise_final_samples': 0,
+#                             'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
+#                         }):
+#         """
+#         Fit the model to data using BADS optimization.
+        
+#         Performs initial log-likelihood estimation, runs BADS optimizer,
+#         then performs final log-likelihood estimation.
+        
+#         Returns:
+#             tuple: (optimized_params, final_log_likelihood)
+#         """
+#         self.time = time()
+#         # first check to see if the dataframe is valid
+#         self.__class__.check_dataframe(data)
+#         print(f"{'[Initializing]':>20} Thread pool with {self.num_workers} threads")
+#         initialize_thread_pool(self.num_workers, manual_seed = manual_seed)
+
+#         self.data = data
+
+#         if not use_expected_counts:
+#             print(f"{'[Expected Counts]':>20} Skipping expected counts calculation, setting all expected counts to 1")
+#             self.data["expected_counts"] = 1
+#         else:
+#             print(f"{'[Expected Counts]':>20} Calculating expected counts...")
+#             initial_LL = self.evaluate(self.model.initial_params, data)
+#             self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
+
+#         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
+#         fitted_params = bads.optimize()['x']
+
+#         print(f"\t[Fitted Parameters]\t {fitted_params}")
+#         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
+#         final_LL = self.evaluate(fitted_params, self.data)
+#         return fitted_params, final_LL
+    
+#     @staticmethod
+#     def check_dataframe(data): 
+#         """Check that the data is in the correct format for fitting."""
+#         assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
+#         assert 'black' in data.columns, "Data must have a 'black' column."
+#         assert 'white' in data.columns, "Data must have a 'white' column."
+#         assert 'move' in data.columns, "Data must have a 'move' column."
+#         assert 'color' in data.columns, "Data must have a 'color' column."
+
+#         for i, row in enumerate(data.itertuples()):
+#             assert row.black >= 0, f"Row {i}: Black pieces must be a non-negative integer."
+#             assert row.white >= 0, f"Row {i}: White pieces must be a non-negative integer."
+#             assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
+#             assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
+#             assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
+#             assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
+
+class SingleThreadedFitter:
     """
     The main class for finding the best heuristic/search parameter
-    fit for a given dataset.
+    fit for a given dataset using sequential processing.
     """
-    def __init__(self, model: TreeSearch, threads=16, verbose = False, subsample = None):
+    def __init__(self, model: TreeSearch, verbose=False, subsample=None, train_repeats = 1):
         """
         Args:
             model: The model this fitter should use.
+            threads: Deprecated parameter (kept for compatibility, ignored).
             verbose: Print extra debugging info.
-            threads: The number of threads to use when fitting.
             subsample: If specified, randomly sample up to N positions without replacement.
         """
         self.model = model
         self.verbose = verbose
-        self.num_workers = threads
         self.iteration_count = 0
         self.time = time()
         self.subsample = subsample
+        self.train_repeats = train_repeats
 
-    def calculate_expected_counts(self, log_likelihoods, c):
-        """Calculate the expected observation counts for each move based on their L-values."""
-        x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
-        dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
-        p = np.exp(-log_likelihoods).astype(np.float32)
-        interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
-        interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
-        times = (c * interp1(p)) / np.mean(interp2(p))
-        return np.vectorize(lambda x: max(x, 1))(np.round(times))
-
-    def parallel_log_likelihood(self, params, trackers: UltraDict, cutoff: float):
-        """
-        Compute log-likelihood of model parameters in parallel.
+    def process_single_trial(self, row):
+        """Process a single trial to completion. Model must be set up before calling."""
+        tracker = IBSTracker(self.model.expt_factor, success_threshold=row.expected_counts)
+        board = fourbynine_board(fourbynine_pattern(int(row.black)), fourbynine_pattern(int(row.white)))
+        actual_move = int(row.move).bit_length() - 1
         
-        Updates global log-likelihood and trackers for each trial until
-        the log-likelihood exceeds the cutoff value.
-        """
+        while tracker.success_count < tracker.success_threshold:
+            tracker.record_success() if self.model.predict(board) == actual_move else tracker.record_failure()
         
-        self.model.set_params(params)
-        while LOG_LIKELIHOOD.value <= cutoff:
-            # prevent multiple workers from selecting the same tracker
-            with trackers.lock:
-                incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
-                if not incomplete_trials: break
-                key, tracker = copy.deepcopy(random.choice(incomplete_trials))
+        return tracker.log_likelihood
 
-            black_, white_, move_, _= key
-            board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
-            actual_move = int(move_).bit_length() - 1
-
-            delta_log_likelihood = 0
-            while tracker.success_count < tracker.success_threshold:
-                predicted_move = self.model.predict(board)
-                if (predicted_move == actual_move):
-                    delta_log_likelihood += tracker.record_success()
-
-                    with trackers.lock:
-                        current_tracker = trackers[key] # fresh read of the current tracker to avoid stale data
-                        if tracker.success_count == current_tracker.success_count + 1:
-                            trackers[key] = tracker
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                    break
-                
-                else:
-                    delta_log_likelihood += tracker.record_failure()
-                    if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
-                        with trackers.lock:
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                        break
+    def get_random_order(self, n):
+        """Generate a random permutation of indices [0, n) using the same method as original."""
+        indices = list(range(n))
+        random_order = []
+        while indices:
+            idx = random.choice(indices)
+            indices.remove(idx)
+            random_order.append(idx)
+        return random_order
 
     def log_likelihood(self, params, data: pd.DataFrame):
         """
         Calculate log-likelihood of the model given parameters and data.
         
-        Uses parallel processing with IBSTracker instances for each trial.
-        Returns an array of log-likelihood values.
+        Sequential implementation using IBSTracker instances for each trial.
+        Trials are processed in random order but results are returned in original data order.
+        
+        Returns:
+            np.array: Log-likelihood values for each trial in original data order.
         """
-        tick = time()
+        self.model.set_params(params)
+        
+        # Generate random processing order
         n_trials = len(data)
-
-        if "expected_counts" not in data.columns:
-            data["expected_counts"] = 1
-            print("Warning: 'expected_counts' column not found. Defaulting to 1.")
-
-
-        trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
-        assert(len(trackers)) == n_trials
-        shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , buffer_size=1024 * 1024, shared_lock=True)
-
-        global LOG_LIKELIHOOD
-        LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
-
-        global POOL
-        results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
-        [result.get() for result in results]
-
-        return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
+        random_order = self.get_random_order(n_trials)
+        
+        # Process trials in random order
+        shuffled_rows = [data.iloc[i] for i in random_order]
+        shuffled_results = np.array(
+            [self.process_single_trial(row) for row in shuffled_rows],
+            dtype=np.float32
+        )
+        
+        # Return results in original data order
+        results = np.empty(n_trials, dtype=np.float32)
+        results[random_order] = shuffled_results
+        return results
     
-    def optimize(self, x): 
-        if self.subsample: 
-            data = self.data.sample(self.subsample)
-        else:
-            data = self.data
-
+    def optimize(self, x):
+        """Optimization function for BADS."""    
         self.time = time()
-        log_likelihood = self.log_likelihood(x, data).sum()
-        if self.verbose: print(f"{'[BADS-' + str(self.iteration_count) + ']':>20} time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
+        log_likelihoods = self.evaluate(x, self.data, self.train_repeats)
+        log_likelihood = self.evaluate(x, self.data, self.train_repeats).sum()
+        log_likelihood_std = self.evaluate(x, self.data, self.train_repeats).std()
+        
+        if self.verbose:
+            iter_str = f"[BADS-{self.iteration_count}]"
+            print(f"{iter_str:>30} "
+                  f"time: {time() - self.time:.3g}s\t "
+                  f"NLL: {log_likelihood:.5g}\t "
+                  f"NLL Std: {log_likelihood_std:.5g}\t "
+                  f"Params: {[np.round(x_, 3) for x_ in x]}")
+        
         self.iteration_count += 1
         return log_likelihood
     
-    def evaluate(self, params, data: pd.DataFrame, n_iters = 10):
-        """Evaluates the log-likelihood of the given parameters on the given data."""
-        print(f"{'[Evaluation]':>20} Running evaluation with {n_iters} iterations...")
-        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
+    def evaluate(self, params, data: pd.DataFrame, n_iters=25):
+        """
+        Evaluate the log-likelihood of the given parameters on the given data.
+        
+        Runs multiple iterations and returns the mean log-likelihood.
+        """
+        results = np.array(
+            [self.log_likelihood(params, data) for _ in range(n_iters)],
+            dtype=np.float32
+        )
+        return results.mean(axis=0)
 
     def fit(self, 
             data: pd.DataFrame, 
@@ -295,18 +466,8 @@ class Fitter:
         self.time = time()
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
-        print(f"{'[Initializing]':>20} Thread pool with {self.num_workers} threads")
-        initialize_thread_pool(self.num_workers, manual_seed = manual_seed)
-
         self.data = data
-
-        if not use_expected_counts:
-            print(f"{'[Expected Counts]':>20} Skipping expected counts calculation, setting all expected counts to 1")
-            self.data["expected_counts"] = 1
-        else:
-            print(f"{'[Expected Counts]':>20} Calculating expected counts...")
-            initial_LL = self.evaluate(self.model.initial_params, data)
-            self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
+        self.data["expected_counts"] = 1
 
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']

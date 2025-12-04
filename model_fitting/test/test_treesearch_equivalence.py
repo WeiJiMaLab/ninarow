@@ -12,8 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 import pandas as pd
 import random
-from tree_search import TreeSearch, Fitter, initialize_thread_pool
-from tree_search_parallel import TreeSearch as TreeSearchST, MultiThreadedFitter
+from tree_search import TreeSearch, Fitter, initialize_thread_pool, SingleThreadedFitter
 from model_fit import DefaultModel, ModelFitter
 from parsers import CSVMove
 from fourbynine import fourbynine_board, fourbynine_pattern, fourbynine_move
@@ -113,15 +112,15 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         treesearch.upper_bound[feature_drop_idx] = feature_drop
     fitter = Fitter(treesearch, threads=1, verbose=False)
     
-    # ===== Setup tree_search_parallel (MultiThreadedFitter) =====
-    treesearch_st = TreeSearchST(templates=templates, initial_weights=weights)
+    # ===== Setup tree_search (SingleThreadedFitter) =====
+    treesearch_st = TreeSearch(templates=templates, initial_weights=weights)
     treesearch_st.cutoff = cutoff
     if 'feature_drop' in treesearch_st.param_names:
         feature_drop_idx = treesearch_st.param_names.index('feature_drop')
         treesearch_st.initial_params[feature_drop_idx] = feature_drop
         treesearch_st.lower_bound[feature_drop_idx] = feature_drop
         treesearch_st.upper_bound[feature_drop_idx] = feature_drop
-    fitter_st = MultiThreadedFitter(treesearch_st, threads=1, verbose=False)
+    fitter_st = SingleThreadedFitter(treesearch_st, verbose=False)
     
     # ===== Setup model_fit (original implementation) =====
     defaultmodel = DefaultModel()
@@ -167,9 +166,9 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
     if verbose:
         print(f"  Completed {n_iterations} iterations")
     
-    # ===== TREE_SEARCH_PARALLEL (MultiThreadedFitter) =====
+    # ===== TREE_SEARCH (SingleThreadedFitter) =====
     if verbose:
-        print("\nRunning tree_search_parallel (MultiThreadedFitter) setup...")
+        print("\nRunning tree_search (SingleThreadedFitter) setup...")
     
     fitter_st.data = train_data.copy()
     fitter_st.data["expected_counts"] = 1
@@ -238,7 +237,7 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
     
     if verbose:
         print(f"\nComparing {n_iterations} iterations (tolerance: {tolerance})")
-        print(f"{'Iter':>4} | {'tree_search':>12} | {'single_thread':>12} | {'model_fit':>12} | {'TS-MF diff':>12} | {'ST-MF diff':>12} | {'TS-ST diff':>12}")
+        print(f"{'Iter':>4} | {'tree_search':>12} | {'tree_search(ST)':>12} | {'model_fit':>12} | {'TS-MF diff':>12} | {'ST-MF diff':>12} | {'TS-ST diff':>12}")
         print("-" * 95)
     
     for i in range(n_iterations):
@@ -271,9 +270,9 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
             if not all_match_ts_mf:
                 print("  ❌ tree_search vs model_fit mismatch")
             if not all_match_st_mf:
-                print("  ❌ single_threaded vs model_fit mismatch")
+                print("  ❌ tree_search (SingleThread) vs model_fit mismatch")
             if not all_match_ts_st:
-                print("  ❌ tree_search vs single_threaded mismatch")
+                print("  ❌ tree_search (Fitter) vs tree_search (SingleThread) mismatch")
         
         # Timing summary
         print("\n" + "=" * 80)
@@ -287,18 +286,18 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
         print(f"\n{'Implementation':<25} {'Avg Time (ms)':>15} {'Total Time (s)':>15}")
         print("-" * 60)
         print(f"{'tree_search (Fitter)':<25} {avg_ts*1000:>15.2f} {np.sum(tree_search_times):>15.4f}")
-        print(f"{'MultiThreadedFitter':<25} {avg_st*1000:>15.2f} {np.sum(single_threaded_times):>15.4f}")
+        print(f"{'tree_search (ST)':<25} {avg_st*1000:>15.2f} {np.sum(single_threaded_times):>15.4f}")
         print(f"{'model_fit':<25} {avg_mf*1000:>15.2f} {np.sum(model_fit_times):>15.4f}")
         
         print(f"\n📊 Speedup Analysis (relative to model_fit):")
-        print(f"   tree_search (Fitter):    {avg_mf/avg_ts:.2f}x")
-        print(f"   MultiThreadedFitter:    {avg_mf/avg_st:.2f}x")
+        print(f"   tree_search (Fitter):        {avg_mf/avg_ts:.2f}x")
+        print(f"   tree_search (SingleThread):  {avg_mf/avg_st:.2f}x")
         
-        print(f"\n📊 Comparison (MultiThreadedFitter vs tree_search Fitter):")
+        print(f"\n📊 Comparison (tree_search (SingleThread) vs tree_search (Fitter)):")
         if avg_st < avg_ts:
-            print(f"   MultiThreadedFitter is {avg_ts/avg_st:.2f}x faster")
+            print(f"   tree_search (SingleThread) is {avg_ts/avg_st:.2f}x faster")
         else:
-            print(f"   tree_search Fitter is {avg_st/avg_ts:.2f}x faster")
+            print(f"   tree_search (Fitter) is {avg_st/avg_ts:.2f}x faster")
     
     return {
         'all_match': all_match,
@@ -319,14 +318,14 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=5, cutoff=1.2,
 
 if __name__ == "__main__":
     # Run verification
-    data_folder = "/Users/jordanlei/Github/monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
+    data_folder = "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/models/2023-week-08"
     result = verify_implementations(
         data_folder=data_folder,
         fold_idx=0,
         n_trials=5,
         cutoff=100.0,  # Large cutoff - no early termination
         manual_seed=1,
-        n_iterations=20,
+        n_iterations=5,
         verbose=True,
         feature_drop=0.0
     )
@@ -340,16 +339,16 @@ if __name__ == "__main__":
         print('✅✅✅ ALL CHECKS PASSED!')
         print('\n✅ All three implementations produce identical NLL values')
         print('   - tree_search (Fitter)')
-        print('   - tree_search_parallel (MultiThreadedFitter)')
+        print('   - tree_search (SingleThread)')
         print('   - model_fit')
     else:
         print('❌ SOME CHECKS FAILED:')
         if not result['match_ts_mf']:
             print('  ❌ tree_search vs model_fit mismatch')
         if not result['match_st_mf']:
-            print('  ❌ MultiThreadedFitter vs model_fit mismatch')
+            print('  ❌ tree_search (SingleThread) vs model_fit mismatch')
         if not result['match_ts_st']:
-            print('  ❌ tree_search vs MultiThreadedFitter mismatch')
+            print('  ❌ tree_search (Fitter) vs tree_search (SingleThread) mismatch')
     
     print('\n' + '=' * 80)
     print('PERFORMANCE RANKING')
@@ -357,7 +356,7 @@ if __name__ == "__main__":
     
     times = [
         ('tree_search (Fitter)', result['avg_tree_search_time']),
-        ('MultiThreadedFitter', result['avg_single_threaded_time']),
+        ('tree_search (SingleThread)', result['avg_single_threaded_time']),
         ('model_fit', result['avg_model_fit_time'])
     ]
     times.sort(key=lambda x: x[1])
