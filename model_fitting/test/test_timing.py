@@ -1,87 +1,87 @@
 """
-Thread timing test for tree_search fit performance.
+Timing test for tree_search fit performance using SingleThreadedFitter.
 
-Tests whether the threads parameter actually leads to performance gains.
-Tests the same amount of data across different thread counts (1, 2, 4, 8, 16)
-to see if increasing threads improves performance.
+Tests the performance of SingleThreadedFitter on a sample dataset.
 """
 import sys
 from pathlib import Path
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import os
+import glob
+import random
+import time
 
 import numpy as np
 import pandas as pd
-import random
-import time
-import glob
-import os
-from tree_search import TreeSearch, Fitter, initialize_thread_pool
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from tree_search import TreeSearch, SingleThreadedFitter
 
 
-class FastFitter(Fitter):
-    """Fitter subclass that uses fewer evaluation iterations for faster testing."""
-    def evaluate(self, params, data: pd.DataFrame, n_iters=3):
-        """Evaluates the log-likelihood with fewer iterations for faster testing."""
-        from tqdm import tqdm
-        import numpy as np
-        print(f"Running evaluation with {n_iters} iterations...")
-        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis=0)
-
-
-def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True):
-    """
-    Test whether the threads parameter actually leads to performance gains.
+def find_data_folder():
+    """Find a data folder with split files."""
+    possible_paths = [
+        "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/modeling/2023-03-13",
+        "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/modeling/2024-02-14",
+        "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/modeling/2023-02-20",
+    ]
     
-    Tests the same amount of data (n_samples) across different thread counts
-    to see if increasing threads improves performance.
+    for path in possible_paths:
+        if glob.glob(f"{path}/split_*.csv"):
+            return path
+    
+    # Try to find any folder with split files
+    base_path = "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/modeling"
+    if os.path.exists(base_path):
+        for item in os.listdir(base_path):
+            item_path = os.path.join(base_path, item)
+            if os.path.isdir(item_path) and glob.glob(f"{item_path}/split_*.csv"):
+                return item_path
+    
+    return None
+
+
+def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
+    """
+    Test SingleThreadedFitter performance on a sample dataset.
     
     Args:
-        models_base_path: Path to directory containing week* model folders
-        n_samples: Number of data samples to use for each test (default: 10)
+        data_folder: Path to directory containing split_*.csv files
+        n_samples: Number of data samples to use for testing (default: 10)
         manual_seed: Random seed for reproducibility
         verbose: Print detailed output
     
     Returns:
-        dict with timing results for each thread count
+        dict with timing results
     """
     # Set seed for reproducibility
     random.seed(manual_seed)
     
-    # Default models base path
-    if models_base_path is None:
-        models_base_path = "../../monkey_4iar/analysis/data/processed/harry/models"
+    # Find data folder if not provided
+    if data_folder is None:
+        data_folder = find_data_folder()
     
-    # Find all week* directories
-    week_pattern = os.path.join(models_base_path, "*week*")
-    week_dirs = glob.glob(week_pattern)
-    
-    if not week_dirs:
-        print(f"❌ ERROR: Could not find any week* directories in {models_base_path}")
+    if data_folder is None:
+        print("❌ ERROR: Could not find data folder with split_*.csv files")
         return None
-    
-    # Pick one at random
-    selected_week = random.choice(week_dirs)
     
     if verbose:
         print("=" * 80)
-        print("THREAD TIMING TEST: Performance across different thread counts")
+        print("TIMING TEST: SingleThreadedFitter performance")
         print("=" * 80)
-        print(f"Models base path: {models_base_path}")
-        print(f"Selected week directory: {selected_week}")
-        print(f"Number of samples per test: {n_samples}")
+        print(f"Data folder: {data_folder}")
+        print(f"Number of samples: {n_samples}")
         print(f"Manual seed: {manual_seed}")
         print()
     
-    # Load data from just split_0.csv (smaller subset for faster testing)
+    # Load data from split_0.csv
     try:
-        data_file = os.path.join(selected_week, "split_0.csv")
-        if not os.path.exists(data_file):
-            print(f"❌ ERROR: Could not find {data_file}")
+        split_files = sorted(glob.glob(f"{data_folder}/split_*.csv"))
+        if not split_files:
+            print(f"❌ ERROR: Could not find split_*.csv files in {data_folder}")
             return None
         
-        # Load only the first n_samples rows to speed up loading
-        full_data = pd.read_csv(data_file, nrows=n_samples * 2)  # Load a bit extra in case we need it
+        data_file = split_files[0]
+        full_data = pd.read_csv(data_file)
         
         if len(full_data) < n_samples:
             print(f"⚠️  Warning: Requested {n_samples} samples but only {len(full_data)} available.")
@@ -91,17 +91,17 @@ def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True
             test_data = full_data.sample(n=n_samples, random_state=manual_seed).copy()
         
         if verbose:
-            print(f"Loaded {len(full_data)} samples from split_0.csv")
+            print(f"Loaded {len(full_data)} samples from {os.path.basename(data_file)}")
             print(f"Using {len(test_data)} samples for testing")
             print()
     
     except Exception as e:
-        print(f"❌ ERROR: Could not load data from {selected_week}")
+        print(f"❌ ERROR: Could not load data from {data_folder}")
         print(f"   Error: {e}")
         return None
     
-    # Thread counts to test
-    thread_counts = [1, 2, 3, 6]
+    # Note: SingleThreadedFitter doesn't use threads, so we just test with a single configuration
+    thread_counts = [1]
     
     # BADS options - limit to ~10 function evaluations for faster testing
     def get_bads_options():
@@ -119,24 +119,22 @@ def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True
     for threads in thread_counts:
         if verbose:
             print("=" * 80)
-            print(f"Testing with {threads} thread(s)")
+            print("Testing SingleThreadedFitter")
             print("=" * 80)
         
         # Setup model and fitter
         model = TreeSearch()
-        fitter = FastFitter(model, threads=threads, verbose=verbose)
+        fitter = SingleThreadedFitter(model, verbose=verbose)
         
         # Measure time
         start_time = time.time()
         
         try:
-            # Only use manual_seed with single thread (required for reproducibility)
-            fit_seed = manual_seed if threads == 1 else None
             bads_options = get_bads_options()
             
             fitted_params, final_LL = fitter.fit(
                 test_data.copy(),  # Use copy to ensure same data each time
-                manual_seed=fit_seed,
+                manual_seed=manual_seed,
                 bads_options=bads_options
             )
             
@@ -175,46 +173,27 @@ def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True
     
     # Print summary
     print("=" * 80)
-    print("THREAD TIMING TEST SUMMARY")
+    print("TIMING TEST SUMMARY")
     print("=" * 80)
     
     successful_runs = [t for t in thread_counts if results[t]['success']]
     
     if successful_runs:
-        print(f"\n✅ Successful runs (using {n_samples} samples each):")
-        print(f"{'Threads':>10} {'Time (s)':>12} {'Speedup':>12} {'Efficiency':>12}")
-        print("-" * 50)
-        
-        baseline_time = results[successful_runs[0]]['time'] if successful_runs else None
+        print(f"\n✅ Successful run (using {n_samples} samples):")
+        print(f"{'Time (s)':>12}")
+        print("-" * 15)
         
         for threads in successful_runs:
             r = results[threads]
             time_val = r['time']
-            
-            if baseline_time and threads > successful_runs[0]:
-                speedup = baseline_time / time_val
-                efficiency = speedup / threads * 100  # Efficiency as percentage
-                print(f"{threads:>10} {time_val:>12.2f} {speedup:>12.2f}x {efficiency:>11.1f}%")
-            else:
-                print(f"{threads:>10} {time_val:>12.2f} {'baseline':>12} {'N/A':>12}")
-        
-        # Analysis
-        if len(successful_runs) >= 2:
-            print("\n📊 Performance Analysis:")
-            for i in range(1, len(successful_runs)):
-                t1, time1 = successful_runs[i-1], results[successful_runs[i-1]]['time']
-                t2, time2 = successful_runs[i], results[successful_runs[i]]['time']
-                speedup = time1 / time2 if time2 > 0 else float('inf')
-                expected_speedup = t2 / t1
-                efficiency = speedup / expected_speedup * 100 if expected_speedup > 0 else 0
-                print(f"   {t1} → {t2} threads: {speedup:.2f}x speedup (expected {expected_speedup:.2f}x, efficiency: {efficiency:.1f}%)")
+            print(f"{time_val:>12.2f}")
     
     failed_runs = [t for t in thread_counts if not results[t]['success']]
     if failed_runs:
-        print("\n❌ Failed runs:")
+        print("\n❌ Failed run:")
         for threads in failed_runs:
             r = results[threads]
-            print(f"   {threads:2d} threads: {r.get('error', 'Unknown error')}")
+            print(f"   Error: {r.get('error', 'Unknown error')}")
     
     print("=" * 80)
     
@@ -224,19 +203,19 @@ def test_timing(models_base_path=None, n_samples=10, manual_seed=1, verbose=True
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description='Test thread timing performance')
+    parser = argparse.ArgumentParser(description='Test SingleThreadedFitter timing performance')
     parser.add_argument('--n-samples', type=int, default=10,
                         help='Number of samples to use for testing (default: 10)')
-    parser.add_argument('--models-path', type=str, default=None,
-                        help='Path to directory containing week* model folders')
+    parser.add_argument('--data-folder', type=str, default=None,
+                        help='Path to directory containing split_*.csv files')
     
     args = parser.parse_args()
     
-    # Run the thread timing test
-    results = test_timing(n_samples=args.n_samples, models_base_path=args.models_path, verbose=True)
+    # Run the timing test
+    results = test_timing(data_folder=args.data_folder, n_samples=args.n_samples, verbose=True)
     
     if results:
-        print("\n✅ Thread timing test completed!")
+        print("\n✅ Timing test completed!")
     else:
-        print("\n❌ Thread timing test failed to run.")
+        print("\n❌ Timing test failed to run.")
 
