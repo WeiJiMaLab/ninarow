@@ -28,15 +28,6 @@ from feature_generator import (
     DEFAULT_FEATURE_WEIGHTS,
     create_feature
 )
-
-
-def get_shallow_size(obj):
-    """Calculates the shallow size of a dictionary, including its keys and values."""
-    size = sys.getsizeof(obj)
-    if isinstance(obj, dict):
-        size += sum(sys.getsizeof(k) for k in obj.keys())
-        size += sum(sys.getsizeof(v) for v in obj.values())
-    return size
     
 class TreeSearch:
     """
@@ -49,7 +40,6 @@ class TreeSearch:
     """
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         self.name = "treesearch"
-        self.expt_factor = 1.0
         self.cutoff = 3.5
         self.c = 50
 
@@ -171,187 +161,13 @@ class TreeSearch:
         """Load the model from a file using pickle."""
         with open(filename, 'rb') as f:
             return pickle.load(f)
-        
-class Fitter:
-    """
-    The main class for finding the best heuristic/search parameter
-    fit for a given dataset.
-    """
-    def __init__(self, model: TreeSearch, threads=16, verbose = False, subsample = None):
-        """
-        Args:
-            model: The model this fitter should use.
-            verbose: Print extra debugging info.
-            threads: The number of threads to use when fitting.
-            subsample: If specified, randomly sample up to N positions without replacement.
-        """
-        self.model = model
-        self.verbose = verbose
-        self.num_workers = threads
-        self.iteration_count = 0
-        self.time = time()
-        self.subsample = subsample
-
-    def calculate_expected_counts(self, log_likelihoods, c):
-        """Calculate the expected observation counts for each move based on their L-values."""
-        x = np.linspace(1e-6, 1 - 1e-6, int(1e6), dtype=np.float32)
-        dilog = np.pi**2 / 6.0 + np.cumsum(np.log(x) / (1 - x)) / len(x)
-        p = np.exp(-log_likelihoods).astype(np.float32)
-        interp1 = CubicSpline(x, np.sqrt(x * dilog), extrapolate=True)
-        interp2 = CubicSpline(x, np.sqrt(dilog / x), extrapolate=True)
-        times = (c * interp1(p)) / np.mean(interp2(p))
-        return np.vectorize(lambda x: max(x, 1))(np.round(times))
-
-    def parallel_log_likelihood(self, params, trackers: UltraDict, cutoff: float):
-        """
-        Compute log-likelihood of model parameters in parallel.
-        
-        Updates global log-likelihood and trackers for each trial until
-        the log-likelihood exceeds the cutoff value.
-        """
-        
-        self.model.set_params(params)
-        while LOG_LIKELIHOOD.value <= cutoff:
-            # prevent multiple workers from selecting the same tracker
-            with trackers.lock:
-                incomplete_trials = [(key, tracker) for key, tracker in trackers.items() if tracker.success_count < tracker.success_threshold]
-                if not incomplete_trials: break
-                key, tracker = copy.deepcopy(random.choice(incomplete_trials))
-
-            black_, white_, move_, _= key
-            board = fourbynine_board(fourbynine_pattern(black_), fourbynine_pattern(white_))
-            actual_move = int(move_).bit_length() - 1
-
-            delta_log_likelihood = 0
-            while tracker.success_count < tracker.success_threshold:
-                predicted_move = self.model.predict(board)
-                if (predicted_move == actual_move):
-                    delta_log_likelihood += tracker.record_success()
-
-                    with trackers.lock:
-                        current_tracker = trackers[key] # fresh read of the current tracker to avoid stale data
-                        if tracker.success_count == current_tracker.success_count + 1:
-                            trackers[key] = tracker
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                    break
-                
-                else:
-                    delta_log_likelihood += tracker.record_failure()
-                    if LOG_LIKELIHOOD.value + delta_log_likelihood > cutoff:
-                        with trackers.lock:
-                            LOG_LIKELIHOOD.value += delta_log_likelihood
-                        break
-
-    def log_likelihood(self, params, data: pd.DataFrame):
-        """
-        Calculate log-likelihood of the model given parameters and data.
-        
-        Uses parallel processing with IBSTracker instances for each trial.
-        Returns an array of log-likelihood values.
-        """
-        tick = time()
-        n_trials = len(data)
-
-        if "expected_counts" not in data.columns:
-            data["expected_counts"] = 1
-            print("Warning: 'expected_counts' column not found. Defaulting to 1.")
-
-
-        trackers = {(key.black, key.white, key.move, uuid.uuid4()): IBSTracker(self.model.expt_factor, success_threshold=key.expected_counts) for key in data.itertuples()}
-        assert(len(trackers)) == n_trials
-        shared_trackers = UltraDict(trackers, full_dump_size= get_shallow_size(trackers) + 1024 * 1024 , buffer_size=1024 * 1024, shared_lock=True)
-
-        global LOG_LIKELIHOOD
-        LOG_LIKELIHOOD.value = n_trials * self.model.expt_factor
-
-        global POOL
-        results = [POOL.apply_async(self.parallel_log_likelihood, (params, shared_trackers, n_trials * self.model.cutoff)) for i in range(self.num_workers)]
-        [result.get() for result in results]
-
-        return np.array([shared_trackers[key].log_likelihood for key in shared_trackers], dtype=np.float32)
-    
-    def optimize(self, x): 
-        if self.subsample: 
-            data = self.data.sample(self.subsample)
-        else:
-            data = self.data
-
-        self.time = time()
-        log_likelihood = self.log_likelihood(x, data).sum()
-        if self.verbose: print(f"{'[BADS-' + str(self.iteration_count) + ']':>20} time: {time() - self.time :.3g}s\t NLL: {log_likelihood:.5g}\t Params: {[np.round(x_, 3) for x_ in x]}")
-        self.iteration_count += 1
-        return log_likelihood
-    
-    def evaluate(self, params, data: pd.DataFrame, n_iters = 50):
-        """Evaluates the log-likelihood of the given parameters on the given data."""
-        print(f"{'[Evaluation]':>20} Running evaluation with {n_iters} iterations...")
-        return np.array([self.log_likelihood(params, data) for _ in tqdm(range(n_iters))], dtype=np.float32).mean(axis = 0)
-
-    def fit(self, 
-            data: pd.DataFrame, 
-            manual_seed=None, 
-            use_expected_counts=False,
-            bads_options={
-                            'uncertainty_handling': True,
-                            'noise_final_samples': 0,
-                            'max_fun_evals': 1000,        # Reduced from 2000 for faster convergence
-                        }):
-        """
-        Fit the model to data using BADS optimization.
-        
-        Performs initial log-likelihood estimation, runs BADS optimizer,
-        then performs final log-likelihood estimation.
-        
-        Returns:
-            tuple: (optimized_params, final_log_likelihood)
-        """
-        self.time = time()
-        # first check to see if the dataframe is valid
-        self.__class__.check_dataframe(data)
-        print(f"{'[Initializing]':>20} Thread pool with {self.num_workers} threads")
-        initialize_thread_pool(self.num_workers, manual_seed = manual_seed)
-
-        self.data = data
-
-        if not use_expected_counts:
-            print(f"{'[Expected Counts]':>20} Skipping expected counts calculation, setting all expected counts to 1")
-            self.data["expected_counts"] = 1
-        else:
-            print(f"{'[Expected Counts]':>20} Calculating expected counts...")
-            initial_LL = self.evaluate(self.model.initial_params, data)
-            self.data["expected_counts"] = self.calculate_expected_counts(initial_LL, self.model.c).astype(int)
-
-        bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
-        fitted_params = bads.optimize()['x']
-
-        print(f"\t[Fitted Parameters]\t {fitted_params}")
-        print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
-        final_LL = self.evaluate(fitted_params, self.data)
-        return fitted_params, final_LL
-    
-    @staticmethod
-    def check_dataframe(data): 
-        """Check that the data is in the correct format for fitting."""
-        assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
-        assert 'black' in data.columns, "Data must have a 'black' column."
-        assert 'white' in data.columns, "Data must have a 'white' column."
-        assert 'move' in data.columns, "Data must have a 'move' column."
-        assert 'color' in data.columns, "Data must have a 'color' column."
-
-        for i, row in enumerate(data.itertuples()):
-            assert row.black >= 0, f"Row {i}: Black pieces must be a non-negative integer."
-            assert row.white >= 0, f"Row {i}: White pieces must be a non-negative integer."
-            assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
-            assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
-            assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
-            assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
 
 class SingleThreadedFitter:
     """
     The main class for finding the best heuristic/search parameter
     fit for a given dataset using sequential processing.
     """
-    def __init__(self, model: TreeSearch, verbose=False, subsample=None, train_repeats = 1):
+    def __init__(self, model: TreeSearch, verbose=False):
         """
         Args:
             model: The model this fitter should use.
@@ -363,19 +179,16 @@ class SingleThreadedFitter:
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.subsample = subsample
-        self.train_repeats = train_repeats
+        self.repeats = 50 # default number of repeats for each trial for IBS
 
-    def process_single_trial(self, row):
+    def process_single_trial(self, trial):
         """Process a single trial to completion. Model must be set up before calling."""
-        tracker = IBSTracker(self.model.expt_factor, success_threshold=row.expected_counts)
-        board = fourbynine_board(fourbynine_pattern(int(row.black)), fourbynine_pattern(int(row.white)))
-        actual_move = int(row.move).bit_length() - 1
-        
-        while tracker.success_count < tracker.success_threshold:
-            tracker.record_success() if self.model.predict(board) == actual_move else tracker.record_failure()
-        
-        return tracker.log_likelihood
+        tracker = IBSTracker(repeats = self.repeats)
+        board = fourbynine_board(fourbynine_pattern(int(trial.black)), fourbynine_pattern(int(trial.white)))
+        actual_move = int(trial.move).bit_length() - 1
+        while not tracker.done:
+            tracker.record(self.model.predict(board) == actual_move)
+        return tracker.nll
 
     def get_random_order(self, n):
         """Generate a random permutation of indices [0, n) using the same method as original."""
@@ -387,15 +200,11 @@ class SingleThreadedFitter:
             random_order.append(idx)
         return random_order
 
-    def log_likelihood(self, params, data: pd.DataFrame):
+    def evaluate(self, params, data: pd.DataFrame):
         """
-        Calculate log-likelihood of the model given parameters and data.
+        Evaluate the log-likelihood of the given parameters on the given data.
         
-        Sequential implementation using IBSTracker instances for each trial.
-        Trials are processed in random order but results are returned in original data order.
-        
-        Returns:
-            np.array: Log-likelihood values for each trial in original data order.
+        Runs multiple iterations and returns the mean log-likelihood.
         """
         self.model.set_params(params)
         
@@ -404,12 +213,15 @@ class SingleThreadedFitter:
         random_order = self.get_random_order(n_trials)
         
         # Process trials in random order
-        shuffled_rows = [data.iloc[i] for i in random_order]
-        shuffled_results = np.array(
-            [self.process_single_trial(row) for row in shuffled_rows],
-            dtype=np.float32
-        )
+        shuffled_trials = [data.iloc[i] for i in random_order]
+
+        shuffled_results = []
+        for trial in shuffled_trials: 
+            nll_trial = self.process_single_trial(trial)
+            shuffled_results.append(nll_trial)
         
+        shuffled_results = np.array(shuffled_results, dtype=np.float32)
+
         # Return results in original data order
         results = np.empty(n_trials, dtype=np.float32)
         results[random_order] = shuffled_results
@@ -417,41 +229,22 @@ class SingleThreadedFitter:
     
     def optimize(self, x):
         """Optimization function for BADS."""    
-        if self.subsample: 
-            data = self.data.sample(self.subsample)
-        else:
-            data = self.data
-
         self.time = time()
-        log_likelihoods = self.log_likelihood(x, data)
-        log_likelihood = log_likelihoods.sum()
-        log_likelihood_std = log_likelihoods.std()
+        # take the sum of all the trial log likelihoods
+        nlls = self.evaluate(x, self.data).sum()
         if self.verbose: 
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL: {log_likelihood:.5g} ± {log_likelihood_std:.5g}\t "
+                  f"NLL (n_repeats={self.repeats}): {nlls:.5g}\t "
                   f"Params: {[np.round(x_, 3) for x_ in x]}")
-        
+                  
         self.iteration_count += 1
-        return log_likelihood
+        return nlls
     
-    def evaluate(self, params, data: pd.DataFrame, n_iters=25):
-        """
-        Evaluate the log-likelihood of the given parameters on the given data.
-        
-        Runs multiple iterations and returns the mean log-likelihood.
-        """
-        results = np.array(
-            [self.log_likelihood(params, data) for _ in range(n_iters)],
-            dtype=np.float32
-        )
-        return results.mean(axis=0)
-
     def fit(self, 
             data: pd.DataFrame, 
             manual_seed=None, 
-            use_expected_counts=False,
             bads_options={
                             'uncertainty_handling': True,
                             'noise_final_samples': 0,
@@ -464,19 +257,20 @@ class SingleThreadedFitter:
         then performs final log-likelihood estimation.
         
         Returns:
-            tuple: (optimized_params, final_log_likelihood)
+            tuple: (optimized_params, final_nll)
         """
         self.time = time()
         # first check to see if the dataframe is valid
         self.__class__.check_dataframe(data)
         self.data = data
-        self.data["expected_counts"] = 1
 
         bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
         fitted_params = bads.optimize()['x']
 
         print(f"\t[Fitted Parameters]\t {fitted_params}")
         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
+
+        # for the final pass we want the mean of each trial's log likelihood
         final_LL = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
     
@@ -502,115 +296,21 @@ class IBSTracker:
     A tracker for the Inverse Binomial Sampling (IBS) process, used to monitor 
     and fit a heuristic to a given dataset by tracking successes and failures.
     """
-    def __init__(self, expt_factor, success_threshold = 1):
+    def __init__(self, repeats = 1):
         """Initialize IBSTracker with experiment factor and success threshold."""
-        self.success_threshold = success_threshold
-        self.expt_factor = expt_factor
-        self.scale_factor = self.expt_factor / self.success_threshold
-        # should clarify that this is the negative log likelihood, i.e. it is always positive
-        self.attempt_count, self.success_count, self.log_likelihood = 0, 0, 0.0
+        self.repeats = repeats
+        self.success_count, self.fail_count, self.nll, self.done = 0, 0, 0.0, False
 
-    def record_success(self):
-        """Record a successful prediction and return the log likelihood diff."""
-        self.success_count += 1
-        self.attempt_count = 0
-        # this returns a CONSTANT even though the log likelihood delta is 0
-        return -self.scale_factor
+    def record(self, is_success:bool):
+        assert not self.done, "Tracker is completed!"
 
-    def record_failure(self):
-        """Record a failed prediction and return the log likelihood diff."""
-        self.attempt_count += 1
-        delta = self.scale_factor * (1 / self.attempt_count)
-        self.log_likelihood += delta
-        return delta
+        if is_success: 
+            self.success_count += 1
+            self.fail_count = 0
+            if self.success_count == self.repeats: self.done = True
+        else: 
+            self.fail_count += 1
+            self.nll += (1 / self.repeats) * (1 / self.fail_count)
     
     def __repr__(self):
-        return f"Successes: {self.success_count}, Attempts: {self.attempt_count}, Log-likelihood: {self.log_likelihood}"
-
-def initialize_thread(shared_value, worker_counter):
-    with worker_counter.get_lock(): 
-        worker_id = worker_counter.value
-        worker_counter.value += 1
-
-    global LOG_LIKELIHOOD
-    LOG_LIKELIHOOD = shared_value
-
-    seed = int.from_bytes(os.urandom(8), 'little') ^ (worker_id * 15485863)
-    random.seed(seed)
-    np.random.seed(seed & 0xFFFFFFFF)
-    print(f"[Worker {worker_id}] seed={seed}, rnd={random.randint(0, 2**64)}")
-
-def set_seeds(base_seed, thread_id):
-    thread_seed = base_seed + thread_id
-    random.seed(thread_seed)
-    print(f"Thread {thread_id}: seed={thread_seed}, Random number: {random.randint(0, 2**64)}")
-    
-
-def initialize_thread_pool(num_threads, manual_seed=None):
-    """
-    Initialize thread pool for parallel log-likelihood computation.
-    
-    Args:
-        num_threads: Number of threads to initialize
-        manual_seed: Optional seed (only valid with num_threads=1)
-    """
-    global LOG_LIKELIHOOD, POOL
-    LOG_LIKELIHOOD = Value('d', 0)
-    worker_counter = Value('i', 0)
-    POOL = Pool(num_threads, initializer=initialize_thread, initargs=(LOG_LIKELIHOOD, worker_counter))
-
-    if manual_seed is not None:
-        assert num_threads == 1, "Setting manual seed can only be used with a single thread. If threads > 1, thread compute order is nondeterministic."
-        print(f"Manual seed: {manual_seed}")
-        POOL.starmap(set_seeds, [(manual_seed, i) for i in range(num_threads)])
-
-def cross_validate(model: TreeSearch, folds: list, leave_out_idx: int, threads: int = 16, subsample=None):
-    """
-    Perform cross-validation on the model using specified folds.
-    
-    Returns:
-        tuple: (fitted_params, training_log_likelihood, test_log_likelihood)
-    """
-    assert leave_out_idx < len(folds), "Invalid leave-out index!"
-
-    print(f"Cross-validating split {leave_out_idx + 1} vs {len(folds) - 1} others")
-    test = folds[leave_out_idx]
-
-    train = []
-    for j in range(len(folds)):
-        if leave_out_idx != j:
-            train.append(folds[j])
-
-    train = pd.concat(train)
-    fitter = Fitter(model, threads = threads, verbose = True, subsample = subsample)
-    params, trainLL = fitter.fit(train)
-
-    testLL = fitter.evaluate(params, test)
-    return params, trainLL, testLL
-
-import os
-def main(): 
-    data_path = "data"
-    output_path = "data/out"
-    n_splits = 5
-    fold_number = 1
-    threads = 1
-    random_sample = False
-    verbose = True
-
-    print(f"Output directory: {output_path}")
-    os.makedirs(output_path, exist_ok = True)
-
-    assert np.all([f"{i + 1}.csv" in os.listdir(data_path) for i in range(n_splits)])
-    print("Loading splits...")
-
-    splits = [pd.read_csv(f"{data_path}/{i + 1}.csv") for i in range(n_splits)]
-
-    random.seed(10)
-    initialize_thread_pool(1, manual_seed = 10)
-
-    q = cross_validate(TreeSearch(), splits, leave_out_idx = 1, threads = 1)
-
-
-if __name__ == "__main__":
-    main()
+        return f"Successes: {self.success_count}, Failures: {self.fail_count}, Negative Log-likelihood: {self.nll}"
