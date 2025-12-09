@@ -64,7 +64,7 @@ def get_moves(node, depth=0):
         moves.extend(get_moves(child, depth + 1))
     return moves
 
-def get_paths(node, path=None, depth=0):
+def get_all_paths(node, path=None, depth=0):
     """
     Returns all root-to-leaf paths as lists of board positions.
     Each path is a list of board_positions corresponding to moves.
@@ -75,21 +75,13 @@ def get_paths(node, path=None, depth=0):
         return [path]
     paths = []
     for child in node.get_children():
-        paths.extend(get_paths(child, path + [child.get_move().board_position], depth + 1))
+        paths.extend(get_all_paths(child, path + [child.get_move().board_position], depth + 1))
     return paths
 
-def count_visits(node, use_paths=False):
-    """
-    Returns a histogram of board positions visited in the search tree.
-    If use_paths is True, counts visits along all root-leaf paths.
-    Otherwise, counts all visits (with possible duplicates).
-    """
-    if use_paths: # counts visits along all root-leaf paths
-        all_paths = get_paths(node)
-        visits = [pos for path in all_paths for pos in path]
-    else: # counts visits as edges in the graph
-        visits = get_moves(node)
-    hist = np.zeros(36, dtype=int)
-    for pos in visits:
-        hist[pos] += 1
-    return hist
+def get_principal_variation(node):
+    pv = []
+    while node.get_children():
+        best_move = node.get_best_move().board_position
+        pv.append(best_move)
+        node = next(child for child in node.get_children() if child.get_move().board_position == best_move)
+    return pv
