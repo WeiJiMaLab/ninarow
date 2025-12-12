@@ -41,7 +41,7 @@ class TreeSearch:
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         self.name = "treesearch"
         self.cutoff = 3.5
-        self.c = 50
+        self.c = 5
 
         # Control parameters (search behavior)
         self.parameter_list = [
@@ -167,7 +167,7 @@ class SingleThreadedFitter:
     The main class for finding the best heuristic/search parameter
     fit for a given dataset using sequential processing.
     """
-    def __init__(self, model: TreeSearch, verbose=False):
+    def __init__(self, model: TreeSearch, n_repeats=50, verbose=False):
         """
         Args:
             model: The model this fitter should use.
@@ -179,7 +179,7 @@ class SingleThreadedFitter:
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.repeats = 50 # default number of repeats for each trial for IBS
+        self.repeats = n_repeats # default number of repeats for each trial for IBS
 
     def process_single_trial(self, trial):
         """Process a single trial to completion. Model must be set up before calling."""
