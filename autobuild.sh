@@ -11,8 +11,16 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     env=1
 else
     HOSTNAME=$(hostname)
-    if [[ "$HOSTNAME" == *"greene"* || -d "/scratch/$USER/conda/miniforge3" ]]; then
+    # Check for known clusters first (both use local miniforge)
+    if [[ "$HOSTNAME" == *"greene"* ]]; then
         echo "🧠 Detected Greene HPC cluster environment"
+        env=2
+    elif [[ "$HOSTNAME" == cs* ]]; then
+        echo "🔥 Detected Torch cluster environment"
+        env=5
+    # Check for local miniforge installation
+    elif [[ -d "/scratch/$USER/conda/miniforge3" ]]; then
+        echo "🐍 Detected local miniforge installation"
         env=2
     elif [[ -n "$SLURM_CLUSTER_NAME" ]]; then
         echo "🧮 Detected generic SLURM cluster: $SLURM_CLUSTER_NAME"
@@ -23,6 +31,7 @@ else
         echo "(2) Greene Cluster (NYU)"
         echo "(3) Generic Linux Cluster"
         echo "(4) Windows"
+        echo "(5) Torch Cluster (NYU)"
         read -p "Enter number: " env
     fi
 fi
@@ -39,13 +48,14 @@ case $env in
     2)
         echo "Setting up for Greene Cluster..."
         source /scratch/$USER/conda/miniforge3/etc/profile.d/conda.sh
-        conda activate /scratch/$USER/conda/envs/env || {
-            echo "Conda environment not found. Please create it first with Miniforge."
+        conda activate env || {
+            echo "Conda environment 'env' not found. Please create it first:"
+            echo "  conda create -n env python cmake swig boost"
             exit 1
         }
 
         echo "✅ Using conda environment: $CONDA_PREFIX"
-        which cmake || { echo "CMake not found. Run: conda install cmake swig boost"; exit 1; }
+        which cmake || { echo "CMake not found. Run: conda install cmake"; exit 1; }
         which swig || { echo "SWIG not found. Run: conda install swig"; exit 1; }
 
         export BOOST_ROOT="$CONDA_PREFIX"
@@ -62,6 +72,23 @@ case $env in
             source "$HOME/miniconda3/etc/profile.d/conda.sh"
             conda activate base
         fi
+        ;;
+
+    5)
+        echo "Setting up for Torch cluster..."
+        source /scratch/$USER/conda/miniforge3/etc/profile.d/conda.sh
+        conda activate env || {
+            echo "Conda environment 'env' not found. Please create it first:"
+            echo "  conda create -n env python cmake swig boost"
+            exit 1
+        }
+
+        echo "✅ Using conda environment: $CONDA_PREFIX"
+        which cmake || { echo "CMake not found. Run: conda install cmake"; exit 1; }
+        which swig || { echo "SWIG not found. Run: conda install swig"; exit 1; }
+
+        export BOOST_ROOT="$CONDA_PREFIX"
+        export CMAKE_PREFIX_PATH="$CONDA_PREFIX:$CMAKE_PREFIX_PATH"
         ;;
 
     4)
@@ -107,8 +134,8 @@ fi
 # 5. Optional C++ tests
 # -----------------------------
 if [ -f "./tests" ]; then
-    if [ "$env" -eq 2 ]; then
-        echo "Skipping C++ tests by default on Greene cluster (heavy compute)."
+    if [ "$env" -eq 2 ] || [ "$env" -eq 5 ]; then
+        echo "Skipping C++ tests by default on Greene/Torch login nodes (heavy compute)."
     else
         read -p "Run compiled C++ tests? (y/n): " run_tests
         if [ "$run_tests" == "y" ]; then

@@ -164,7 +164,7 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=20, cutoff=100.0,
     
     # Setup models
     model_st, model_mf = setup_models(cutoff, feature_drop)
-    fitter_st = SingleThreadedFitter(model_st, verbose=False)
+    fitter_st = SingleThreadedFitter(model_st, n_repeats=1, verbose=False)
     fitter_mf = ModelFitter(
         args=Prodict({'threads': 1, 'random_sample': False, 'verbose': False}),
         model=model_mf
