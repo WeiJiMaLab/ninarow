@@ -159,9 +159,9 @@ python test/test_treesearch_equivalence.py
 
 | Directory/File | Purpose |
 |----------------|---------|
-| `test/test_feature_generator.py` | Tests for modular heuristic creation and functional equivalence |
-| `test/test_treesearch_equivalence.py` | Verification that `tree_search.py` and `model_fit.py` produce identical NLL values |
-| `*_ut.cpp` | C++ unit tests for corresponding header files |
+| `model_fitting/test/test_feature_generator.py` | Verifies heuristic equivalence: `evaluate()` values and best moves match between template-based and parameter-vector approaches |
+| `model_fitting/test/test_treesearch_equivalence.py` | Verifies IBS equivalence: NLL values from `SingleThreadedFitter` and `ModelFitter` match to ~10⁻⁶ precision |
+| `test_cpp/*_ut.cpp` | C++ unit tests for corresponding header files |
 
 ### Documentation and Examples
 
@@ -183,81 +183,80 @@ python test/test_treesearch_equivalence.py
 
 ## Model Fitting: Dual Implementation Approach
 
-The repository provides two implementations for model fitting, each serving different purposes:
+The repository provides two implementations for model fitting that are **functionally equivalent**—they produce identical NLL (negative log-likelihood) values when configured with matching parameters.
+
+### Functional Equivalence
+
+Both implementations use Inverse Binomial Sampling (IBS) to estimate log-likelihoods of model parameters given observed human moves. Despite architectural differences, they produce identical results:
+
+| Aspect | `model_fit.py` | `tree_search.py` |
+|--------|----------------|------------------|
+| Heuristic construction | 58-parameter vector, 17 feature groups | Template-based, 4 feature groups |
+| Trial processing | Interleaved across trials | Sequential per trial |
+| Parallelization | Multiprocessing pool | Single-threaded |
+| **NLL output** | **Identical** | **Identical** |
+
+The test suite (`test/test_treesearch_equivalence.py`) verifies this by running both implementations on the same data with matched parameters and confirming NLL values match to within ~10⁻⁶ (floating point precision).
 
 ### model_fit.py: Original Implementation
 
-**Purpose**: Legacy-compatible implementation using the parameter vector approach.
+**Purpose**: Legacy-compatible implementation optimized for parallel processing.
 
 **Key Characteristics**:
-- Uses `bads_parameters_to_model_parameters()` to convert 10 BADS parameters into a 58-parameter vector
-- Constructs heuristics using `fourbynine_heuristic.create(DoubleVector(params), True)`
-- Relies on hardcoded C++ features from `fourbynine_features.h`
-- Creates 17 feature groups automatically (4 copies of 4 template types + padding)
-- Maintains backward compatibility with existing code and data
-
-**Use When**:
-- Working with existing codebases that depend on the original implementation
-- Need exact structural equivalence with legacy heuristics
-- Comparing against previously published results
+- Uses `bads_parameters_to_model_parameters()` to expand 10 BADS parameters into 58-parameter vector
+- Constructs heuristics via `fourbynine_heuristic.create(DoubleVector(params), True)`
+- Processes trials in interleaved fashion with early stopping based on cumulative NLL cutoff
+- Supports multi-threaded execution via `multiprocessing.Pool`
 
 **Example Usage**:
 ```python
 from model_fit import DefaultModel, ModelFitter
+
 model = DefaultModel()
 fitter = ModelFitter(args, model)
-fitted_params = fitter.fit_model(moves)
+params, loglik = fitter.fit_model(moves)
 ```
 
 ### tree_search.py: Modular Implementation
 
-**Purpose**: Modern, flexible implementation using template-based heuristic construction.
+**Purpose**: Modern, flexible implementation with explicit template-based heuristic construction.
 
 **Key Characteristics**:
 - Accepts custom templates and weights as constructor parameters
-- Uses `create_modular_heuristic()` to construct heuristics from templates
-- Generates features dynamically from template definitions
-- Creates one feature group per template type (typically 4 groups)
-- Allows easy addition of new feature types without modifying C++ code
-
-**Use When**:
-- Developing new heuristic features or templates
-- Need flexibility in feature definition
-- Want to experiment with different feature combinations
-- Building models that need to match Julia implementations
+- Builds heuristics from template definitions via `TreeSearch.create_heuristic()`
+- Processes each trial sequentially to completion
+- Cleaner, more maintainable code structure
 
 **Example Usage**:
 ```python
-from tree_search import TreeSearch, Fitter
-from feature_generator import DEFAULT_TEMPLATES, DEFAULT_FEATURE_WEIGHTS
+from tree_search import TreeSearch, SingleThreadedFitter
 
 # Use default templates
 model = TreeSearch()
 
-# Or use custom templates
+# Or define custom templates
 custom_templates = {
     "4IAR": [[1, 1, 1, 1]],
-    "3IAR_CON": [[0, 1, 1, 1], [1, 1, 1, 0]],
-    # ... more templates
+    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+    "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
+    "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
 }
-custom_weights = {"4IAR": 8.0, "3IAR_CON": 7.0, ...}
+custom_weights = {"4IAR": 9.0, "3IAR": 3.5, "2IAR_CON": 1.0, "2IAR_DIS": 0.4}
 model = TreeSearch(templates=custom_templates, initial_weights=custom_weights)
 
-fitter = Fitter(model, threads=16)
+fitter = SingleThreadedFitter(model)
 fitted_params, final_LL = fitter.fit(data)
 ```
 
 ### When to Use Which
 
-| Scenario | Recommended Implementation |
-|----------|---------------------------|
-| New projects | `tree_search.py` (modular) |
-| Legacy code compatibility | `model_fit.py` (original) |
-| Custom feature development | `tree_search.py` (modular) |
-| Cross-language verification (Python ↔ Julia) | `tree_search.py` (modular) |
-| Exact structural equivalence needed | `model_fit.py` (original) |
-
-**Note**: Both implementations produce functionally equivalent results (identical evaluation values and best moves) when using the same parameters. The difference is in how heuristics are constructed internally.
+| Scenario | Recommended |
+|----------|-------------|
+| New projects | `tree_search.py` |
+| Large datasets (parallelization needed) | `model_fit.py` |
+| Custom feature development | `tree_search.py` |
+| Cross-language verification (Python ↔ Julia) | `tree_search.py` |
+| Legacy code compatibility | `model_fit.py` |
 
 ## Modular Heuristic Design
 
@@ -293,11 +292,17 @@ The `feature_generator.py` module:
 
 ### Verification
 
-The test suite (`test/test_feature_generator.py`) verifies that:
-- Modular heuristics produce identical `evaluate()` values as parameter vector approach
-- Best moves match between implementations
+The test suite verifies functional equivalence at multiple levels:
+
+**`test/test_feature_generator.py`** — Heuristic equivalence:
+- Modular heuristics produce identical `evaluate()` values as the parameter vector approach
+- Best moves match between implementations (when `feature_drop=0`)
 - Behavior is consistent with and without noise
-- Custom templates work correctly
+
+**`test/test_treesearch_equivalence.py`** — End-to-end IBS equivalence:
+- Runs both `SingleThreadedFitter` and `ModelFitter` on identical data
+- Verifies NLL values match to ~10⁻⁶ precision across multiple iterations
+- Confirms that architectural differences (sequential vs interleaved processing, single vs multi-threaded) do not affect results
 
 ## Key Features
 
