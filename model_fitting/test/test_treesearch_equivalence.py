@@ -16,6 +16,11 @@ from prodict import Prodict
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from tree_search import TreeSearch, SingleThreadedFitter
+from tree_search_parallel import (
+    TreeSearchConfig, 
+    MultiThreadedFitter,
+    create_tree_search_config
+)
 from model_fit import DefaultModel, ModelFitter
 import model_fit
 from parsers import CSVMove
@@ -95,17 +100,33 @@ def setup_models(cutoff=100.0, feature_drop=0.0):
     return model_st, model_mf
 
 
-def run_tree_search_optimization(fitter, params, n_iterations, manual_seed):
+def run_tree_search_optimization(fitter, params, n_iterations, manual_seed, track_seeds=False):
     """Run optimization iterations with SingleThreadedFitter."""
     random.seed(manual_seed)
     _ = random.randint(0, 2**64)  # Match worker state
     
+    seeds_generated = []
     nlls, times = [], []
-    for _ in range(n_iterations):
+    for i in range(n_iterations):
+        # Capture random state before optimize call
+        if track_seeds:
+            # Save current random state
+            state_before = random.getstate()
+        
         start = time.perf_counter()
         nll = fitter.optimize(params)
         times.append(time.perf_counter() - start)
         nlls.append(nll)
+        
+        # Capture random state after optimize call and extract seed if it was generated
+        if track_seeds:
+            state_after = random.getstate()
+            # The seed would have been generated during evaluate -> set_params
+            # We can't easily capture it from the heuristic, but we can check random state
+            seeds_generated.append((i, state_before, state_after))
+    
+    if track_seeds:
+        return nlls, times, seeds_generated
     return nlls, times
 
 
@@ -231,10 +252,167 @@ def verify_implementations(data_folder, fold_idx=0, n_trials=20, cutoff=100.0,
     }
 
 
+def verify_parallel_equivalence(data_folder, fold_idx=0, n_trials=20, cutoff=100.0,
+                                manual_seed=1, n_iterations=20, verbose=True, feature_drop=0.0):
+    """
+    Verify that the parallel version produces identical results to the original
+    when using n_threads=1. This serves as a verification tool to ensure the
+    parallel code path works correctly.
+    """
+    if verbose:
+        print("=" * 80)
+        print("VERIFICATION: Original vs Parallel (n_threads=1)")
+        print("=" * 80)
+        print(f"Data folder: {data_folder}")
+        print(f"Trials: {n_trials}, Iterations: {n_iterations}, Seed: {manual_seed}")
+        print()
+    
+    # Load data
+    data = load_data(data_folder, fold_idx, n_trials)
+    data["expected_counts"] = 1
+    
+    # Setup models - use same templates/weights for both
+    templates = {
+        "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
+        "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+        "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+        "4IAR": [[1, 1, 1, 1]],
+    }
+    weights = {"2IAR_CON": 1.0, "2IAR_DIS": 0.4, "3IAR": 3.5, "4IAR": 9.0}
+    
+    # Setup original TreeSearch
+    model_orig = TreeSearch(templates=templates, initial_weights=weights)
+    model_orig.cutoff = cutoff
+    if 'feature_drop' in model_orig.param_names:
+        idx = model_orig.param_names.index('feature_drop')
+        model_orig.initial_params[idx] = feature_drop
+        model_orig.lower_bound[idx] = feature_drop
+        model_orig.upper_bound[idx] = feature_drop
+    
+    # Setup parallel version using config
+    config_parallel = create_tree_search_config(templates=templates, initial_weights=weights)
+    
+    # Adjust feature_drop if needed
+    if 'feature_drop' in config_parallel.param_names:
+        feature_drop_idx = config_parallel.param_names.index('feature_drop')
+        config_parallel.initial_params[feature_drop_idx] = feature_drop
+        config_parallel.lb[feature_drop_idx] = feature_drop
+        config_parallel.ub[feature_drop_idx] = feature_drop
+    
+    # Create fitters - parallel version with n_threads=1
+    fitter_orig = SingleThreadedFitter(model_orig, n_repeats=1, verbose=False)
+    fitter_parallel = MultiThreadedFitter(
+        config=config_parallel,
+        n_repeats=1,
+        verbose=False,
+        n_threads=1
+    )
+    
+    # Setup fitters
+    fitter_orig.data = data.copy()
+    fitter_orig.iteration_count = 0
+    fitter_parallel.data = data.copy()
+    fitter_parallel.iteration_count = 0
+    
+    test_params = model_orig.initial_params.copy()
+    
+    # Run optimizations with same seed and track seeds
+    if verbose:
+        print("Running Original SingleThreadedFitter...")
+    result_orig = run_tree_search_optimization(
+        fitter_orig, test_params, n_iterations, manual_seed, track_seeds=True
+    )
+    if isinstance(result_orig, tuple) and len(result_orig) == 3:
+        nll_orig, times_orig, seeds_orig = result_orig
+    else:
+        nll_orig, times_orig = result_orig
+        seeds_orig = None
+    
+    if verbose:
+        print("Running MultiThreadedFitter (n_threads=1)...")
+    result_parallel = run_tree_search_optimization(
+        fitter_parallel, test_params, n_iterations, manual_seed, track_seeds=True
+    )
+    if isinstance(result_parallel, tuple) and len(result_parallel) == 3:
+        nll_parallel, times_parallel, seeds_parallel = result_parallel
+    else:
+        nll_parallel, times_parallel = result_parallel
+        seeds_parallel = None
+    
+    # Debug: Check seed alignment
+    if verbose:
+        print("\n" + "=" * 80)
+        print("SEED DEBUG INFO")
+        print("=" * 80)
+        print("Checking seeds generated during evaluation...")
+        print(f"Original fitter last_seed: {fitter_orig.last_seed}")
+        print(f"Parallel fitter last_seed: {fitter_parallel.last_seed}")
+        if fitter_orig.last_seed is not None and fitter_parallel.last_seed is not None:
+            seed_match = (fitter_orig.last_seed == fitter_parallel.last_seed)
+            print(f"Seeds match: {seed_match}")
+            if not seed_match:
+                print(f"  Original seed: {fitter_orig.last_seed}")
+                print(f"  Parallel seed: {fitter_parallel.last_seed}")
+        else:
+            print("Warning: One or both seeds are None - may not have been captured")
+        print("=" * 80)
+    
+    # Compare results
+    if verbose:
+        print("\n" + "=" * 80)
+        print("COMPARISON")
+        print("=" * 80)
+        print(f"{'Iter':>4} | {'Original':>12} | {'Parallel (n=1)':>15} | {'Difference':>12} | {'Status'}")
+        print("-" * 70)
+    
+    all_match = compare_results(nll_orig, nll_parallel, tolerance=1e-5, verbose=verbose)
+    
+    # Timing summary
+    if verbose:
+        avg_orig = np.mean(times_orig)
+        avg_parallel = np.mean(times_parallel)
+        
+        print("\n" + "=" * 80)
+        print("TIMING SUMMARY")
+        print("=" * 80)
+        print(f"{'Implementation':<30} {'Avg Time (ms)':>15} {'Total Time (s)':>15}")
+        print("-" * 65)
+        print(f"{'Original SingleThreadedFitter':<30} {avg_orig*1000:>15.2f} {np.sum(times_orig):>15.4f}")
+        print(f"{'MultiThreadedFitter (n=1)':<30} {avg_parallel*1000:>15.2f} {np.sum(times_parallel):>15.4f}")
+        print(f"\nSpeedup: {avg_orig/avg_parallel:.2f}x")
+    
+    return {
+        'all_match': all_match,
+        'nll_original': nll_orig,
+        'nll_parallel': nll_parallel,
+        'avg_original_time': np.mean(times_orig),
+        'avg_parallel_time': np.mean(times_parallel)
+    }
+
+
 if __name__ == "__main__":
+    # Run original test
     data_folder = "/scratch/hl3976/monkey_4iar/analysis/data/processed/harry/modeling/2023-02-20"
     
-    result = verify_implementations(
+    print("\n" + "=" * 80)
+    print("TEST 1: Original vs model_fit")
+    print("=" * 80)
+    result1 = verify_implementations(
+        data_folder=data_folder,
+        fold_idx=0,
+        n_trials=20,
+        cutoff=100.0,
+        manual_seed=1,
+        n_iterations=20,
+        verbose=True,
+        feature_drop=0.0
+    )
+    
+    # Run parallel equivalence test
+    print("\n" + "=" * 80)
+    print("TEST 2: Original vs Parallel (n_threads=1)")
+    print("=" * 80)
+    result2 = verify_parallel_equivalence(
         data_folder=data_folder,
         fold_idx=0,
         n_trials=20,
@@ -250,13 +428,24 @@ if __name__ == "__main__":
     print('FINAL SUMMARY')
     print('=' * 80)
     
-    if result['all_match']:
-        print('✅✅✅ ALL CHECKS PASSED!')
-        print('\nBoth implementations produce identical NLL values')
-    else:
-        print('❌ CHECKS FAILED: Implementations produce different results')
+    test1_passed = result1['all_match']
+    test2_passed = result2['all_match']
     
-    print(f"\nPerformance: SingleThreadedFitter is {result['avg_model_fit_time']/result['avg_single_threaded_time']:.2f}x faster")
+    if test1_passed:
+        print('✅ TEST 1 PASSED: Original vs model_fit match')
+    else:
+        print('❌ TEST 1 FAILED: Original vs model_fit mismatch')
+    
+    if test2_passed:
+        print('✅ TEST 2 PASSED: Original vs Parallel (n_threads=1) match')
+    else:
+        print('❌ TEST 2 FAILED: Original vs Parallel (n_threads=1) mismatch')
+    
+    if test1_passed and test2_passed:
+        print('\n✅✅✅ ALL CHECKS PASSED!')
+    else:
+        print('\n❌ SOME CHECKS FAILED')
+    
     print('=' * 80)
     
-    sys.exit(0 if result['all_match'] else 1)
+    sys.exit(0 if (test1_passed and test2_passed) else 1)

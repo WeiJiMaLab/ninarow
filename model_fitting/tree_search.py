@@ -40,9 +40,6 @@ class TreeSearch:
     """
     def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
         self.name = "treesearch"
-        self.cutoff = 3.5
-        self.c = 5
-
         # Control parameters (search behavior)
         self.parameter_list = [
             {"name": "pruning_threshold", "initial_value": 3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
@@ -127,6 +124,9 @@ class TreeSearch:
         self.heuristic = self.create_heuristic(params[:6], params[6:])
         random_seed = random.randint(0, 2**64)
         self.heuristic.seed_generator(random_seed)
+        # Store seed for debugging (if fitter has this attribute)
+        if hasattr(self, '_fitter'):
+            self._fitter.last_seed = random_seed
     
     def predict(self, board):
         """Predict the best move for a given board state."""
@@ -180,6 +180,9 @@ class SingleThreadedFitter:
         self.iteration_count = 0
         self.time = time()
         self.repeats = n_repeats # default number of repeats for each trial for IBS
+        self.last_seed = None  # For debugging: track last generated seed
+        # Link back to fitter so set_params can store seed
+        self.model._fitter = self
 
     def process_single_trial(self, trial):
         """Process a single trial to completion. Model must be set up before calling."""
