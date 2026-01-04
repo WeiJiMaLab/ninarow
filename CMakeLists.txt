@@ -71,15 +71,16 @@ list(APPEND CXX_FLAGS "-fPIC" "-Wall" "-Wextra" "-Werror" "-Wno-unused" "-fexcep
 enable_testing()
 
 add_executable(tests
-  bfs_node_ut.cpp
-  ninarow_bfs_ut.cpp
-  ninarow_board_ut.cpp
-  ninarow_heuristic_ut.cpp
-  ninarow_heuristic_feature_ut.cpp
-  ninarow_vectorized_feature_evaluator_ut.cpp
-  ninarow_move_ut.cpp
-  ninarow_pattern_ut.cpp
+  test_cpp/bfs_node_ut.cpp
+  test_cpp/ninarow_bfs_ut.cpp
+  test_cpp/ninarow_board_ut.cpp
+  test_cpp/ninarow_heuristic_ut.cpp
+  test_cpp/ninarow_heuristic_feature_ut.cpp
+  test_cpp/ninarow_vectorized_feature_evaluator_ut.cpp
+  test_cpp/ninarow_move_ut.cpp
+  test_cpp/ninarow_pattern_ut.cpp
 )
+target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(tests
   GTest::gtest_main
   Eigen3::Eigen
