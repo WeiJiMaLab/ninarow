@@ -1,7 +1,8 @@
 """
-Timing test for tree_search fit performance using SingleThreadedFitter.
+Timing test for tree_search_parallel scaling with different numbers of threads.
 
-Tests the performance of SingleThreadedFitter on a sample dataset.
+Tests the performance of MultiThreadedFitter with different n_threads values
+to measure parallelization scaling.
 """
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tree_search import TreeSearch, SingleThreadedFitter
+from tree_search_parallel import MultiThreadedFitter, create_tree_search_config
 
 
 def find_data_folder():
@@ -40,21 +41,26 @@ def find_data_folder():
     return None
 
 
-def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
+def test_timing(data_folder=None, n_samples=50, n_threads_list=None, manual_seed=1, verbose=True):
     """
-    Test SingleThreadedFitter performance on a sample dataset.
+    Test MultiThreadedFitter performance scaling with different thread counts.
     
     Args:
         data_folder: Path to directory containing split_*.csv files
-        n_samples: Number of data samples to use for testing (default: 10)
+        n_samples: Number of data samples to use for testing (default: 50)
+        n_threads_list: List of thread counts to test (default: [1, 2, 4, 8])
         manual_seed: Random seed for reproducibility
         verbose: Print detailed output
     
     Returns:
-        dict with timing results
+        dict with timing results for each thread count
     """
     # Set seed for reproducibility
     random.seed(manual_seed)
+    
+    # Default thread counts to test
+    if n_threads_list is None:
+        n_threads_list = [1, 2, 4, 8]
     
     # Find data folder if not provided
     if data_folder is None:
@@ -66,10 +72,11 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
     
     if verbose:
         print("=" * 80)
-        print("TIMING TEST: SingleThreadedFitter performance")
+        print("TIMING TEST: MultiThreadedFitter scaling with n_threads")
         print("=" * 80)
         print(f"Data folder: {data_folder}")
         print(f"Number of samples: {n_samples}")
+        print(f"Thread counts to test: {n_threads_list}")
         print(f"Manual seed: {manual_seed}")
         print()
     
@@ -100,8 +107,8 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
         print(f"   Error: {e}")
         return None
     
-    # Note: SingleThreadedFitter doesn't use threads, so we just test with a single configuration
-    thread_counts = [1]
+    # Create config once (shared across all thread counts)
+    config = create_tree_search_config()
     
     # BADS options - limit to ~10 function evaluations for faster testing
     def get_bads_options():
@@ -116,15 +123,14 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
     
     results = {}
     
-    for threads in thread_counts:
+    for n_threads in n_threads_list:
         if verbose:
             print("=" * 80)
-            print("Testing SingleThreadedFitter")
+            print(f"Testing MultiThreadedFitter with n_threads={n_threads}")
             print("=" * 80)
         
-        # Setup model and fitter
-        model = TreeSearch()
-        fitter = SingleThreadedFitter(model, verbose=verbose)
+        # Setup fitter
+        fitter = MultiThreadedFitter(config, n_repeats=1, verbose=False, n_threads=n_threads)
         
         # Measure time
         start_time = time.time()
@@ -140,12 +146,13 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
             
             elapsed_time = time.time() - start_time
             
-            results[threads] = {
+            results[n_threads] = {
                 'time': elapsed_time,
                 'success': True,
                 'fitted_params': fitted_params,
                 'final_LL': final_LL,
-                'n_samples': len(test_data)
+                'n_samples': len(test_data),
+                'n_iterations': fitter.iteration_count
             }
             
             if verbose:
@@ -157,7 +164,7 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
         
         except Exception as e:
             elapsed_time = time.time() - start_time
-            results[threads] = {
+            results[n_threads] = {
                 'time': elapsed_time,
                 'success': False,
                 'error': str(e),
@@ -176,24 +183,27 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
     print("TIMING TEST SUMMARY")
     print("=" * 80)
     
-    successful_runs = [t for t in thread_counts if results[t]['success']]
+    successful_runs = [t for t in n_threads_list if results[t]['success']]
     
     if successful_runs:
-        print(f"\n✅ Successful run (using {n_samples} samples):")
-        print(f"{'Time (s)':>12}")
-        print("-" * 15)
+        baseline_time = results[successful_runs[0]]['time'] if successful_runs else None
         
-        for threads in successful_runs:
-            r = results[threads]
+        print(f"\n{'n_threads':>12} | {'Time (s)':>12} | {'Speedup':>10} | {'Efficiency':>12}")
+        print("-" * 60)
+        
+        for n_threads in successful_runs:
+            r = results[n_threads]
             time_val = r['time']
-            print(f"{time_val:>12.2f}")
+            speedup = baseline_time / time_val if baseline_time else 1.0
+            efficiency = speedup / n_threads if n_threads > 0 else 0.0
+            print(f"{n_threads:>12} | {time_val:>12.2f} | {speedup:>10.2f}x | {efficiency:>12.2%}")
     
-    failed_runs = [t for t in thread_counts if not results[t]['success']]
+    failed_runs = [t for t in n_threads_list if not results[t]['success']]
     if failed_runs:
-        print("\n❌ Failed run:")
-        for threads in failed_runs:
-            r = results[threads]
-            print(f"   Error: {r.get('error', 'Unknown error')}")
+        print("\n❌ Failed runs:")
+        for n_threads in failed_runs:
+            r = results[n_threads]
+            print(f"   n_threads={n_threads}: {r.get('error', 'Unknown error')}")
     
     print("=" * 80)
     
@@ -203,19 +213,25 @@ def test_timing(data_folder=None, n_samples=10, manual_seed=1, verbose=True):
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description='Test SingleThreadedFitter timing performance')
-    parser.add_argument('--n-samples', type=int, default=10,
-                        help='Number of samples to use for testing (default: 10)')
+    parser = argparse.ArgumentParser(description='Test MultiThreadedFitter scaling with different thread counts')
+    parser.add_argument('--n-samples', type=int, default=50,
+                        help='Number of samples to use for testing (default: 50)')
     parser.add_argument('--data-folder', type=str, default=None,
                         help='Path to directory containing split_*.csv files')
+    parser.add_argument('--n-threads', type=int, nargs='+', default=None,
+                        help='Thread counts to test (default: 1 2 4 8)')
     
     args = parser.parse_args()
     
     # Run the timing test
-    results = test_timing(data_folder=args.data_folder, n_samples=args.n_samples, verbose=True)
+    results = test_timing(
+        data_folder=args.data_folder,
+        n_samples=args.n_samples,
+        n_threads_list=args.n_threads,
+        verbose=True
+    )
     
     if results:
         print("\n✅ Timing test completed!")
     else:
         print("\n❌ Timing test failed to run.")
-
