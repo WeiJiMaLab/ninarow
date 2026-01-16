@@ -85,3 +85,19 @@ def get_principal_variation(node):
         pv.append(best_move)
         node = next(child for child in node.get_children() if child.get_move().board_position == best_move)
     return pv
+
+def get_max_depth(node):
+    """
+    Returns the maximum depth of the tree from the given node.
+    
+    Args:
+        node: The root node of the tree
+        
+    Returns:
+        The depth of the deepest node in the tree (using node.get_depth())
+    """
+    if not node.get_children():
+        return 0
+    
+    max_child_depth = max(get_max_depth(child) + 1 for child in node.get_children())
+    return max_child_depth
