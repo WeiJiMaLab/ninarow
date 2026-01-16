@@ -8,6 +8,7 @@
 #include <random>
 #include <boost/unordered_map.hpp>
 #include <boost/random/bernoulli_distribution.hpp>
+#include <boost/random/geometric_distribution.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/mersenne_twister.hpp>
 
@@ -156,10 +157,12 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   double pruning_thresh;
 
   /**
-   * A parameter controlling when searches should stop executing. A search will
-   * only execute for a certain number of maximum iterations given by a function
-   * of `gamma`: a maximum of 1 + 1.0 / gamma iterations will be performed by
-   * searches that respect `gamma`.
+   * A parameter controlling when searches should stop executing. `gamma` is the
+   * success probability parameter of a geometric distribution used to sample
+   * the number of search iterations: max_iterations = geometric(gamma) + 1.
+   * Higher gamma means fewer iterations on average (gamma=1 is purely myopic).
+   * 
+   * Hard stop version (for compatibility): max_iterations = 1 + 1.0 / gamma
    */
   double gamma;
 
@@ -238,6 +241,12 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   boost::random::bernoulli_distribution<> lapse;
 
   /**
+   * A random distribution used for sampling the number of search iterations.
+   * See `gamma`.
+   */
+  boost::random::geometric_distribution<int> iter_dist;
+
+  /**
    * If true, noise is injected across the evaluation function, including random
    * feature dropout. If false, the heuristic will evaluate deterministically.
    */
@@ -311,7 +320,9 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
                         params[param_pack_idx + j + 2 * num_param_packs]);
     }
     noise = boost::random::normal_distribution<double>(0.0, 1.0);
-    lapse = boost::random::bernoulli_distribution<>(lapse_rate);    for (std::size_t i = 0; i < Board::get_board_size(); ++i)
+    lapse = boost::random::bernoulli_distribution<>(lapse_rate);
+    iter_dist = boost::random::geometric_distribution<int>(gamma);
+    for (std::size_t i = 0; i < Board::get_board_size(); ++i)
       vtile[i] = 1.0 / sqrt(pow(i / Board::get_board_width() - 1.5, 2) +
                             pow(i % Board::get_board_width() - 4.0, 2));
     c_self = 2.0 * opp_scale / (1.0 + opp_scale);
@@ -631,6 +642,14 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * @return The `stopping_thresh` parameter.
    */
   double get_stopping_thresh() const { return stopping_thresh; }
+
+  /**
+   * Samples from the geometric distribution to determine the maximum number of
+   * iterations for a search. This matches fourinarow's behavior.
+   *
+   * @return A sampled max_iterations value (iter_dist(engine) + 1).
+   */
+  int sample_max_iterations() { return iter_dist(engine) + 1; }
 
  private:
   /**

@@ -29,7 +29,8 @@ class NInARowBestFirstSearch
                                                                board),
         best_move(),
         num_repetitions(0),
-        iterations(0) {}
+        iterations(0),
+        max_iterations(heuristic->sample_max_iterations()) {}
   ~NInARowBestFirstSearch() = default;
 
   /**
@@ -67,7 +68,9 @@ class NInARowBestFirstSearch
   bool stopping_conditions(
       std::shared_ptr<Heuristic> heuristic,
       const typename Heuristic::BoardT& board) const override {
-    return iterations >= (std::size_t(1.0 / heuristic->get_gamma()) + 1) ||
+    // Hard stop version (for compatibility):
+    // return iterations >= (std::size_t(1.0 / heuristic->get_gamma()) + 1) ||
+    return iterations >= max_iterations ||
            num_repetitions >= heuristic->get_stopping_thresh() ||
            Search<Heuristic, BFSNode<typename Heuristic::BoardT>>::
                stopping_conditions(heuristic, board);
@@ -102,6 +105,12 @@ class NInARowBestFirstSearch
    * The number of iterations the current search has performed.
    */
   std::size_t iterations;
+
+  /**
+   * The maximum number of iterations for this search, sampled from the
+   * geometric distribution at construction time.
+   */
+  std::size_t max_iterations;
 };
 
 }  // namespace NInARow
