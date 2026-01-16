@@ -1,7 +1,7 @@
 atomics==1.0.2
-matplotlib==3.7.1
+matplotlib>=3.7.1
 networkx==3.2.1
-numpy==1.26.4
+numpy>=1.26.4
 PyBADS==1.0.5
 PyQt6==6.7.1
 PyQt6-Qt6==6.7.3

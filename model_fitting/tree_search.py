@@ -38,15 +38,15 @@ class TreeSearch:
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS):
+    def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
         self.name = "treesearch"
         # Control parameters (search behavior)
         self.parameter_list = [
             {"name": "pruning_threshold", "initial_value": 3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
-            {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 10.0, "plausible_lower_bound": 0.01, "plausible_upper_bound": 1.0},
+            {"name": "stopping_prob", "initial_value": 0.3, "lower_bound": 0.01, "upper_bound": 1.0, "plausible_lower_bound": 0.1, "plausible_upper_bound": 1.0},
             {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.5},
             {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.5},
-            {"name": "opp_scale", "initial_value": 1.2, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.2, "plausible_upper_bound": 4},
+            {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.2, "plausible_upper_bound": 4},
             {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
         ]
 
@@ -67,6 +67,10 @@ class TreeSearch:
                 "plausible_upper_bound": 15,
             })
 
+        # Compile parameters for optimization
+        self.compile_parameters(verbose = verbose)
+
+    def compile_parameters(self, verbose = True):
         # Extract parameter arrays for optimization
         self.param_names = [param["name"] for param in self.parameter_list]
         self.initial_params = np.array([param["initial_value"] for param in self.parameter_list], dtype=np.float32)
@@ -75,16 +79,17 @@ class TreeSearch:
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
 
-        print(f"{'Parameter':>20} : {'lo':>8} {'plo':>8} {'x0':>8} {'phi':>8} {'hi':>8}")
-        for p in self.parameter_list:
-            print(
-                f"{p['name']:>20} : "
-                f"{p['lower_bound']:>8.3f} "
-                f"{p['plausible_lower_bound']:>8.3f} "
-                f"{p['initial_value']:>8.3f} "
-                f"{p['plausible_upper_bound']:>8.3f} "
-                f"{p['upper_bound']:>8.3f}"
-            )
+        if verbose:
+            print(f"{'Parameter':>20} : {'lo':>8} {'plo':>8} {'x0':>8} {'phi':>8} {'hi':>8}")
+            for p in self.parameter_list:
+                print(
+                    f"{p['name']:>20} : "
+                    f"{p['lower_bound']:>8.3f} "
+                    f"{p['plausible_lower_bound']:>8.3f} "
+                    f"{p['initial_value']:>8.3f} "
+                    f"{p['plausible_upper_bound']:>8.3f} "
+                    f"{p['upper_bound']:>8.3f}"
+                )        
 
     def create_heuristic(self, control_vec, feature_vec):
         """
@@ -166,6 +171,66 @@ class TreeSearch:
         """Load the model from a file using pickle."""
         with open(filename, 'rb') as f:
             return pickle.load(f)
+
+
+class MyopicTS(TreeSearch):
+    """
+    Myopic tree search model that constructs heuristics from templates.
+    
+    The model accepts custom templates and weights, allowing flexible heuristic
+    construction. Features are generated from templates once during initialization
+    and cached for efficient reuse. The create_heuristic method uses cached values
+    to avoid redundant computation during parameter optimization.
+    """
+    def __init__(self, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
+        super().__init__(templates, initial_weights, verbose = False)
+        self.name = "myopicTS"
+
+        # stopping probability is fixed at 1e10, so it's not fittable here.
+        self.parameter_list = [
+            {"name": "pruning_threshold", "initial_value": 3, "lower_bound": 0.1, "upper_bound": 10.0, "plausible_lower_bound": 1.0, "plausible_upper_bound": 6.0},
+            {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0, "plausible_upper_bound": 0.5},
+            {"name": "lapse_rate", "initial_value": 0.1, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.05, "plausible_upper_bound": 0.5},
+            {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.2, "plausible_upper_bound": 4},
+            {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
+        ]
+
+        # Feature templates and weights (modular design)
+        self.templates = DEFAULT_TEMPLATES if templates is None else templates
+        self.sorted_groups = sorted(self.templates.keys())
+        self.features = make_features_from_groups(self.templates)
+        self.initial_weights = DEFAULT_FEATURE_WEIGHTS if initial_weights is None else initial_weights
+
+        # Add feature weight parameters (one per template group)
+        for group in self.sorted_groups:
+            self.parameter_list.append({
+                "name": group,
+                "initial_value": self.initial_weights[group],
+                "lower_bound": -10,
+                "upper_bound": 20,
+                "plausible_lower_bound": -5,
+                "plausible_upper_bound": 15,
+            })
+
+        self.compile_parameters(verbose = verbose)
+
+    def set_params(self, params):
+        """Set parameters and construct heuristic from templates (vectorized, fixed order)."""
+        assert len(params) == len(self.parameter_list), (
+            f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
+        )
+
+        pruning_threshold, feature_drop, lapse_rate, opp_scale, center_weight = params[:5]
+        control_vec = [pruning_threshold, 1.0, feature_drop, lapse_rate, opp_scale, center_weight]
+
+        self.heuristic = self.create_heuristic(control_vec, params[5:])
+        random_seed = random.randint(0, 2**64)
+        self.heuristic.seed_generator(random_seed)
+        # Store seed for debugging (if fitter has this attribute)
+        if hasattr(self, '_fitter'):
+            self._fitter.last_seed = random_seed
+
+
 
 class SingleThreadedFitter:
     """
