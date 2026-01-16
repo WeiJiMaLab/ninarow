@@ -101,15 +101,20 @@ class TreeSearch:
 
         # 1. Initialize heuristic (no features yet)
         control_params = [
-            10000.0, float(pruning_threshold), float(stopping_prob), float(lapse_rate),
-            1.0, 1.0, float(center_weight)
+            10000.0, 
+            float(pruning_threshold), 
+            float(stopping_prob), 
+            float(lapse_rate),
+            1.0, 
+            1.0, 
+            float(center_weight)
         ]
         heuristic = fourbynine.fourbynine_heuristic.create(DoubleVector(control_params), False)
 
         # 2. Add feature groups and features
         for weight, group_name in zip(feature_vec, self.sorted_groups):
             weight = float(weight)
-            heuristic.add_feature_group(weight, weight * float(opp_scale), float(feature_drop))
+            heuristic.add_feature_group(weight * float(opp_scale), weight, float(feature_drop))
             group_idx = len(heuristic.get_feature_group_weights()) - 1
             for pieces, spaces, min_empty in self.features[group_name]:
                 heuristic.add_feature(group_idx, create_feature(pieces, spaces, min_empty))

@@ -207,7 +207,7 @@ def create_modular_heuristic(control_params, weights, templates=DEFAULT_TEMPLATE
             raise ValueError(f"Group '{group_name}' in templates but not in weights dict")
         
         weight = weights[group_name]
-        heuristic.add_feature_group(weight, weight * opp_scale, feature_drop)
+        heuristic.add_feature_group(weight * opp_scale, weight, feature_drop)
         group_idx = len(heuristic.get_feature_group_weights()) - 1
         
         # Add features for this group
