@@ -26,6 +26,21 @@ DEFAULT_FEATURE_WEIGHTS = {
 }
 
 
+SIMPLE_TEMPLATES = {
+    "4IAR": [[1, 1, 1, 1]],
+    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+    "2IAR": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1], [1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+    "1IAR": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+}
+
+SIMPLE_FEATURE_WEIGHTS = {
+    "1IAR": -0.5,
+    "2IAR": 2.0,
+    "3IAR": 6.0,
+    "4IAR": 15.0,
+}
+
+
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
     """
     Generate all possible positions for k-in-a-row patterns.
