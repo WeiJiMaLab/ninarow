@@ -42,7 +42,39 @@ fi
 case $env in
     1)
         echo "Installing dependencies for Mac..."
-        brew install cmake swig boost
+        brew install cmake boost pcre2
+        
+        # Install SWIG 4.3.0 manually (Homebrew has 4.4.1 which has $function macro issues)
+        SWIG_VERSION=$(swig -version 2>/dev/null | head -1 | grep -o "4\.[0-9]\+\.[0-9]\+" || echo "")
+        if [ "$SWIG_VERSION" = "4.3.0" ]; then
+            echo "✅ SWIG 4.3.0 is already installed"
+        else
+            echo "Installing SWIG 4.3.0 (required to avoid $function macro issues in 4.4.1)..."
+            SWIG_DIR="/tmp/swig-4.3.0"
+            SWIG_TAR="$SWIG_DIR.tar.gz"
+            
+            # Download if not already present
+            if [ ! -d "$SWIG_DIR" ]; then
+                echo "Downloading SWIG 4.3.0..."
+                curl -L -o "$SWIG_TAR" https://sourceforge.net/projects/swig/files/swig/swig-4.3.0/swig-4.3.0.tar.gz/download
+                tar -xzf "$SWIG_TAR" -C /tmp
+                rm -f "$SWIG_TAR"
+            fi
+            
+            # Build and install
+            cd "$SWIG_DIR"
+            if [ ! -f "Makefile" ]; then
+                echo "Configuring SWIG 4.3.0..."
+                ./configure --prefix=/opt/homebrew
+            fi
+            echo "Building SWIG 4.3.0..."
+            make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+            echo "Installing SWIG 4.3.0..."
+            make install
+            cd - > /dev/null
+            echo "✅ SWIG 4.3.0 installed successfully"
+        fi
+        echo "Using SWIG: $(swig -version | head -1)"
         ;;
 
     2)
@@ -114,8 +146,10 @@ cd build
 
 echo "Running CMake..."
 PY_EXEC=$(which python)
+SWIG_EXEC=$(which swig)
 echo "Using Python executable: $PY_EXEC"
-cmake -DPython3_EXECUTABLE=$PY_EXEC -Dgtest_discover_tests=OFF ..
+echo "Using SWIG: $SWIG_EXEC"
+cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discover_tests=OFF ..
 
 # Limit build parallelism safely on login nodes
 cmake --build . --config Release
@@ -168,13 +202,16 @@ fi
 # 7. Final checks
 # -----------------------------
 echo "Verifying C++ extension imports..."
+cd ../model_fitting
 python - <<'EOF'
 try:
     import fourbynine
     print("✅ fourbynine module imported successfully")
 except ImportError as e:
     print("⚠️ Could not import fourbynine:", e)
+    print("   Make sure _swig_fourbynine.so exists in this directory")
 EOF
+cd ../build
 
 echo -e "\n----------------------------------------"
 printf "\e[32m🎉 Build Complete.\e[0m\n"
