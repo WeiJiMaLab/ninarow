@@ -185,7 +185,7 @@ class MyopicTreeSearch(TreeSearch):
     to avoid redundant computation during parameter optimization.
     """
     def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose = True)
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose = verbose)
         self.name = "MyopicTreeSearch"
 
     def set_params(self, params):
