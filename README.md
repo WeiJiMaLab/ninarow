@@ -3,7 +3,6 @@
 This repository provides a high-performance C++ implementation of N-in-a-Row games (like Connect Four) with Python bindings, designed for cognitive modeling and AI research. The system includes game engines, search algorithms, heuristic evaluation functions, and tools for fitting computational models to human behavioral data.
 
 ## Table of Contents
-
 - [Authorial Credit](#authorial-credit)
 - [Overview](#overview)
 - [Quick Start](#quick-start)
@@ -90,6 +89,24 @@ python tree_search.py
 cd model_fitting
 python model_fit.py <path_to_game_csv>
 ```
+
+Note that the parameter bounds in the original implementation are as follows: 
+- pruning threshold
+- stopping probability
+- feature drop rate
+- lapse rate
+- active / passive scaling
+- center feature
+- connected 2IAR
+- disconnected 2IAR
+- 3IAR
+- 4IAR
+
+Note that you may want to change the parameter fitting bounds
+for ease of fitting, consider increasing the lower bound
+on the second parameter (stopping probability; 0.001 --> 0.01)
+and the plausible lower bound of the fourth parameter (lapse rate; 0.001 --> 0.05)
+
 
 **Interactive board exploration:**
 ```bash
