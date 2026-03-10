@@ -1,5 +1,99 @@
+import json
+from pathlib import Path
+
 from graphviz import Digraph
 import numpy as np
+
+
+def _pattern_string_to_board_positions(pattern_string):
+    """Convert pattern.to_string() to list of 0-indexed board positions."""
+    return [i for i in range(len(pattern_string)) if pattern_string[-i - 1] == "1"]
+
+
+def tree_to_json(root, path=None, max_depth=None, indent=2):
+    """
+    Export the search tree to a readable JSON format for the TreeSearch Vue component.
+
+    Each node has: id, self (board positions of active player), opponent (positions of
+    other player), and optionally children.
+
+    Args:
+        root: Root node from NInARowBestFirstSearch.get_tree()
+        path: If provided, write JSON to this file path.
+        max_depth: If provided, limit tree depth.
+        indent: JSON indent for readability (default 2).
+
+    Returns:
+        dict: The tree as a nested dict. If path is given, also writes to file.
+    """
+    from fourbynine import get_other_player
+
+    root_board = root.get_board()
+    root_self_player = root_board.active_player()
+    root_opponent_player = get_other_player(root_self_player)
+
+    counter = [0]
+
+    def node_to_dict(node, depth, on_pv=True):
+        if max_depth is not None and depth > max_depth:
+            return None
+
+        node_id = f"n{counter[0]}"
+        counter[0] += 1
+
+        board = node.get_board()
+        self_positions = _pattern_string_to_board_positions(
+            board.get_pieces(root_self_player).to_string()
+        )
+        opponent_positions = _pattern_string_to_board_positions(
+            board.get_pieces(root_opponent_player).to_string()
+        )
+
+        best_move_pos = (
+            node.get_best_move().board_position if node.get_children() else None
+        )
+
+        children = []
+        for child in node.get_children():
+            if max_depth is not None and depth >= max_depth:
+                continue
+            child_on_pv = (
+                on_pv
+                and best_move_pos is not None
+                and child.get_move().board_position == best_move_pos
+            )
+            child_dict = node_to_dict(child, depth + 1, on_pv=child_on_pv)
+            if child_dict is not None:
+                children.append(child_dict)
+
+        value = node.get_value()
+        v = float(value)
+        if np.isinf(v):
+            value_out = "win" if v > 0 else "lose"
+        else:
+            value_out = round(v, 2)
+
+        out = {
+            "id": node_id,
+            "self": self_positions,
+            "opponent": opponent_positions,
+            "value": value_out,
+            "pv": on_pv,
+        }
+        if depth > 0:
+            out["move"] = node.get_move().board_position
+        if children:
+            out["children"] = children
+        return out
+
+    tree_dict = node_to_dict(root, 0, on_pv=True)
+    if path is not None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(tree_dict, f, indent=indent)
+    return tree_dict
+
 
 def tree_to_graphviz(root, max_depth=None):
     """

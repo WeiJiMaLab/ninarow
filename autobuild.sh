@@ -145,11 +145,20 @@ mkdir -p build
 cd build
 
 echo "Running CMake..."
-PY_EXEC=$(which python)
+# On macOS, prefer Homebrew Python for the SWIG extension (avoids conda-related import segfault).
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+    [ -x "$p" ] && PY_EXEC=$p && break
+  done
+fi
+PY_EXEC=${PY_EXEC:-$(which python3 2>/dev/null || which python)}
 SWIG_EXEC=$(which swig)
 echo "Using Python executable: $PY_EXEC"
 echo "Using SWIG: $SWIG_EXEC"
-cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discover_tests=OFF ..
+# macOS: avoid SWIG extension segfault on import by using -undefined dynamic_lookup
+CMAKE_EXTRA=()
+[[ "$OSTYPE" == "darwin"* ]] && CMAKE_EXTRA=(-DCMAKE_SHARED_LINKER_FLAGS="-undefined dynamic_lookup")
+cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discover_tests=OFF .. "${CMAKE_EXTRA[@]}"
 
 # Limit build parallelism safely on login nodes
 cmake --build . --config Release
@@ -159,7 +168,7 @@ cmake --build . --config Release
 # -----------------------------
 if [ -f "../model_fitting/install_test.py" ]; then
     echo "Running Python installation test..."
-    python ../model_fitting/install_test.py || echo "⚠️ Python test script failed (check dependencies)."
+    "$PY_EXEC" ../model_fitting/install_test.py || echo "⚠️ Python test script failed (check dependencies)."
 else
     echo "No install_test.py found, skipping."
 fi
@@ -203,7 +212,7 @@ fi
 # -----------------------------
 echo "Verifying C++ extension imports..."
 cd ../model_fitting
-python - <<'EOF'
+"$PY_EXEC" - <<'EOF'
 try:
     import fourbynine
     print("✅ fourbynine module imported successfully")
