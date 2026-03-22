@@ -328,11 +328,11 @@ def main():
 
     fig, ax = plt.subplots(3, 3, figsize=(4, 4))
 
-    def distance_from_center(_, move):
+    def distance_from_board_center(_, move):
         return manhattan_distance(index_to_coordinate(move), np.array([1.5, 4]))
 
     plot_statistic(ax[0, 0], moves, histograms,
-                   distance_from_center, "Distance to\nboard center", random_moves)
+                   distance_from_board_center, "Distance to\nboard center", random_moves)
 
     def distance_from_own_pieces(board, move):
         return average_manhattan_distance_from_pattern(board.get_pieces(board.active_player()), move)
@@ -346,16 +346,16 @@ def main():
     plot_statistic(ax[0, 2], moves, histograms,
                    distance_from_opponent_pieces, "Distance to\nopponent's pieces", random_moves)
 
-    def distance_from_center_of_mass_of_own_pieces(board, move):
+    def distance_from_board_center_of_mass_of_own_pieces(board, move):
         return manhattan_distance(index_to_coordinate(move), center_of_mass_of_pattern(board.get_pieces(board.active_player())))
 
     plot_statistic(ax[1, 0], moves, histograms,
-                   distance_from_center_of_mass_of_own_pieces, "Distance to\nown center of mass", random_moves)
+                   distance_from_board_center_of_mass_of_own_pieces, "Distance to\nown center of mass", random_moves)
 
-    def distance_from_center_of_mass_of_opponent_pieces(board, move):
+    def distance_from_board_center_of_mass_of_opponent_pieces(board, move):
         return manhattan_distance(index_to_coordinate(move), center_of_mass_of_pattern(board.get_pieces(fourbynine.get_other_player(board.active_player()))))
 
-    plot_statistic(ax[1, 1], moves, histograms, distance_from_center_of_mass_of_opponent_pieces,
+    plot_statistic(ax[1, 1], moves, histograms, distance_from_board_center_of_mass_of_opponent_pieces,
                    "Distance to\nopponent's center of mass", random_moves)
 
     def number_of_own_orthogonal_neighbors(board, move):
