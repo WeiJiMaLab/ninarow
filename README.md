@@ -176,8 +176,9 @@ python test/test_treesearch_equivalence.py
 
 | Directory/File | Purpose |
 |----------------|---------|
-| `model_fitting/tests/test_feature_generator.py` | Verifies heuristic equivalence: `evaluate()` values and best moves match between template-based and parameter-vector approaches |
-| `model_fitting/tests/test_treesearch_equivalence.py` | Verifies IBS equivalence: NLL values from `SingleThreadedFitter` and `ModelFitter` match to ~10⁻⁶ precision |
+| `model_fitting/tests/feature_generator_validation.py` | Manual script: modular heuristic vs parameter-vector (run with `python`; not `pytest`) |
+| `model_fitting/tests/test_treesearch_equivalence.py` | `pytest`: IBS NLL equivalence (`SingleThreadedFitter`, `ModelFitter`, `MultiThreadedFitter` n=1) |
+| `model_fitting/tests/test_timing.py` | `pytest`: ST vs MT timing / practical bench (CLI) |
 | `test_cpp/*_ut.cpp` | C++ unit tests for corresponding header files |
 
 ### Documentation and Examples

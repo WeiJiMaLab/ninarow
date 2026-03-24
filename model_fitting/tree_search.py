@@ -207,7 +207,7 @@ class MyopicTreeSearch(TreeSearch):
 
 class MyopicSimpleTreeSearch(MyopicTreeSearch):
     def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=SIMPLE_TEMPLATES, initial_weights=SIMPLE_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose = True)
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose=verbose)
         self.name = "MyopicSimpleTreeSearch"
 
 
@@ -216,7 +216,7 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     Myopic tree search which ignores the opponent's features.
     """
     def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_weights, verbose = True)
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_weights, verbose=verbose)
         self.name = "MyopicSelfOnlyTreeSearch"
     
     def set_params(self, params):
@@ -228,8 +228,10 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
         pruning_threshold, feature_drop, lapse_rate, center_weight = params[:4]
         control_vec = [pruning_threshold, 1.0, feature_drop, lapse_rate, 0.0, center_weight]
         self.heuristic = self.create_heuristic(control_vec, params[4:])
-
-
+        random_seed = random.randint(0, 2**64)
+        self.heuristic.seed_generator(random_seed)
+        if hasattr(self, "_fitter"):
+            self._fitter.last_seed = random_seed
 
 class SingleThreadedFitter:
     """
