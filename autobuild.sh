@@ -7,7 +7,8 @@ rm -rf build
 # -----------------------------
 if [[ "$OSTYPE" == "darwin"* ]]; then
     ARCH=$(uname -m)
-    echo "Detected macOS ($ARCH)"
+    BREW_PREFIX=$(brew --prefix)
+    echo "Detected macOS ($ARCH), Homebrew prefix: $BREW_PREFIX"
     env=1
 else
     HOSTNAME=$(hostname)
@@ -65,7 +66,7 @@ case $env in
             cd "$SWIG_DIR"
             if [ ! -f "Makefile" ]; then
                 echo "Configuring SWIG 4.3.0..."
-                ./configure --prefix=/opt/homebrew
+                ./configure --prefix="$BREW_PREFIX" LDFLAGS="-Wl,-rpath,$BREW_PREFIX/lib"
             fi
             echo "Building SWIG 4.3.0..."
             make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -147,7 +148,7 @@ cd build
 echo "Running CMake..."
 # On macOS, prefer Homebrew Python for the SWIG extension (avoids conda-related import segfault).
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+  for p in "$BREW_PREFIX/bin/python3" /usr/local/bin/python3; do
     [ -x "$p" ] && PY_EXEC=$p && break
   done
 fi
