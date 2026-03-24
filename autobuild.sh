@@ -45,40 +45,60 @@ case $env in
         echo "Installing dependencies for Mac..."
         brew install cmake boost pcre2
         
-        # Check if SWIG 4.3.0 is installed AND functional
-        SWIG_VERSION=$(swig -version 2>/dev/null | head -1 | grep -o "4\.[0-9]\+\.[0-9]\+" || echo "")
+        # Install SWIG 4.3.0 to a local directory to avoid system conflicts and RPATH issues
+        SWIG_LOCAL_DIR="$HOME/.ninarow/swig-4.3.0"
+        SWIG_EXEC="$SWIG_LOCAL_DIR/bin/swig"
+        
+        # Check if local SWIG 4.3.0 is already installed AND functional
+        SWIG_VERSION=$("$SWIG_EXEC" -version 2>/dev/null | head -1 | grep -o "4\.[0-9]\+\.[0-9]\+" || echo "")
         SWIG_WORKS=0
-        if [ "$SWIG_VERSION" = "4.3.0" ] && swig -swiglib >/dev/null 2>&1; then
+        if [ "$SWIG_VERSION" = "4.3.0" ] && "$SWIG_EXEC" -swiglib >/dev/null 2>&1; then
             SWIG_WORKS=1
         fi
 
         if [ "$SWIG_WORKS" -eq 1 ]; then
-            echo "✅ SWIG 4.3.0 is already installed and functional"
+            echo "✅ Local SWIG 4.3.0 is functional at $SWIG_LOCAL_DIR"
         else
-            echo "Installing SWIG 4.3.0 (required to avoid $function macro issues in 4.4.1)..."
-            SWIG_DIR="/tmp/swig-4.3.0"
-            SWIG_TAR="$SWIG_DIR.tar.gz"
+            echo "Installing SWIG 4.3.0 manually to $SWIG_LOCAL_DIR (avoids $function macro issues in 4.4.1)..."
+            mkdir -p "$SWIG_LOCAL_DIR"
+            SWIG_SRC_DIR="/tmp/swig-4.3.0"
+            SWIG_TAR="$SWIG_SRC_DIR.tar.gz"
             
             # Download if not already present
-            if [ ! -d "$SWIG_DIR" ]; then
-                echo "Downloading SWIG 4.3.0..."
+            if [ ! -d "$SWIG_SRC_DIR" ]; then
+                echo "Downloading SWIG 4.3.0 source..."
                 curl -L -o "$SWIG_TAR" https://sourceforge.net/projects/swig/files/swig/swig-4.3.0/swig-4.3.0.tar.gz/download
                 tar -xzf "$SWIG_TAR" -C /tmp
                 rm -f "$SWIG_TAR"
             fi
             
-            # Build and install
-            cd "$SWIG_DIR"
+            # Build and install to local directory
+            cd "$SWIG_SRC_DIR"
             echo "Configuring SWIG 4.3.0..."
-            ./configure --prefix="$BREW_PREFIX" LDFLAGS="-Wl,-rpath,$BREW_PREFIX/lib"
+            ./configure --prefix="$SWIG_LOCAL_DIR"
             echo "Building SWIG 4.3.0..."
             make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
             echo "Installing SWIG 4.3.0..."
             make install
+            
+            # Explicitly fix RPATH on macOS to find Homebrew libraries (pcre2)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "Fixing SWIG RPATH for Homebrew libraries..."
+                PCRE_PREFIX=$(brew --prefix pcre2 2>/dev/null || brew --prefix)
+                install_name_tool -add_rpath "$PCRE_PREFIX/lib" "$SWIG_EXEC" 2>/dev/null || true
+                install_name_tool -add_rpath "$BREW_PREFIX/lib" "$SWIG_EXEC" 2>/dev/null || true
+                
+                # Verify it's functional now
+                if ! "$SWIG_EXEC" -swiglib >/dev/null 2>&1; then
+                    echo "⚠️ SWIG still has library loading issues. Attempting absolute path fix..."
+                    install_name_tool -change "@rpath/libpcre2-8.0.dylib" "$PCRE_PREFIX/lib/libpcre2-8.0.dylib" "$SWIG_EXEC" 2>/dev/null || true
+                fi
+            fi
+            
             cd - > /dev/null
-            echo "✅ SWIG 4.3.0 installed successfully"
+            echo "✅ SWIG 4.3.0 installed successfully to $SWIG_LOCAL_DIR"
         fi
-        echo "Using SWIG: $(swig -version | head -1)"
+        echo "Using SWIG: $("$SWIG_EXEC" -version | head -1)"
         ;;
 
     2)
@@ -156,7 +176,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   done
 fi
 PY_EXEC=${PY_EXEC:-$(which python3 2>/dev/null || which python)}
-SWIG_EXEC=$(which swig)
+SWIG_EXEC=${SWIG_EXEC:-$(which swig)}
 echo "Using Python executable: $PY_EXEC"
 echo "Using SWIG: $SWIG_EXEC"
 # macOS: avoid SWIG extension segfault on import by using -undefined dynamic_lookup
