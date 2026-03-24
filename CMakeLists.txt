@@ -122,10 +122,16 @@ IF (NOT WIN32)
 ENDIF()
 
 target_include_directories(swig_fourbynine PUBLIC "./")
-target_link_libraries(swig_fourbynine
-  Python3::Python
-  Eigen3::Eigen
-)
+
+# On macOS, Python extensions must NOT link against libpython.
+# Python symbols are resolved at runtime from the interpreter via -undefined dynamic_lookup.
+# Explicitly linking Python3::Python causes duplicate symbols and segfaults, especially with conda.
+# On Linux/Windows, explicit linking is required.
+if(NOT APPLE)
+  target_link_libraries(swig_fourbynine Python3::Python)
+endif()
+target_link_libraries(swig_fourbynine Eigen3::Eigen)
+
 
 # Set Python module properties
 set_target_properties(swig_fourbynine PROPERTIES
