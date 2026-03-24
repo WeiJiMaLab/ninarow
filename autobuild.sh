@@ -45,10 +45,15 @@ case $env in
         echo "Installing dependencies for Mac..."
         brew install cmake boost pcre2
         
-        # Install SWIG 4.3.0 manually (Homebrew has 4.4.1 which has $function macro issues)
+        # Check if SWIG 4.3.0 is installed AND functional
         SWIG_VERSION=$(swig -version 2>/dev/null | head -1 | grep -o "4\.[0-9]\+\.[0-9]\+" || echo "")
-        if [ "$SWIG_VERSION" = "4.3.0" ]; then
-            echo "✅ SWIG 4.3.0 is already installed"
+        SWIG_WORKS=0
+        if [ "$SWIG_VERSION" = "4.3.0" ] && swig -swiglib >/dev/null 2>&1; then
+            SWIG_WORKS=1
+        fi
+
+        if [ "$SWIG_WORKS" -eq 1 ]; then
+            echo "✅ SWIG 4.3.0 is already installed and functional"
         else
             echo "Installing SWIG 4.3.0 (required to avoid $function macro issues in 4.4.1)..."
             SWIG_DIR="/tmp/swig-4.3.0"
@@ -64,10 +69,8 @@ case $env in
             
             # Build and install
             cd "$SWIG_DIR"
-            if [ ! -f "Makefile" ]; then
-                echo "Configuring SWIG 4.3.0..."
-                ./configure --prefix="$BREW_PREFIX" LDFLAGS="-Wl,-rpath,$BREW_PREFIX/lib"
-            fi
+            echo "Configuring SWIG 4.3.0..."
+            ./configure --prefix="$BREW_PREFIX" LDFLAGS="-Wl,-rpath,$BREW_PREFIX/lib"
             echo "Building SWIG 4.3.0..."
             make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
             echo "Installing SWIG 4.3.0..."
