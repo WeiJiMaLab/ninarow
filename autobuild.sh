@@ -197,6 +197,17 @@ fi
 SWIG_EXEC=${SWIG_EXEC:-$(which swig)}
 echo "Using Python executable: $PY_EXEC"
 echo "Using SWIG: $SWIG_EXEC"
+# macOS: warn if Python arch ≠ system (e.g. x86_64 Python under Rosetta on arm64 Mac —
+# pip would fetch x86 wheels while CMake built the extension for that same Python).
+if [[ "$OSTYPE" == "darwin"* ]] && [[ -n "$PY_EXEC" ]]; then
+    PY_MACHINE=$("$PY_EXEC" -c "import platform; print(platform.machine())" 2>/dev/null || echo "unknown")
+    SYS_ARCH=$(uname -m)
+    echo "Architecture: system=$SYS_ARCH, Python platform.machine()=$PY_MACHINE"
+    if [[ "$SYS_ARCH" == "arm64" ]] && [[ "$PY_MACHINE" == "x86_64" ]]; then
+        echo "⚠️  Python is x86_64 on an arm64 Mac (often Rosetta). Native arm64 wheels need a native"
+        echo "   arm64 interpreter (e.g. Homebrew /opt/homebrew/opt/python@3.x/bin/python3)."
+    fi
+fi
 # macOS: avoid SWIG extension segfault on import by using -undefined dynamic_lookup
 CMAKE_EXTRA=()
 [[ "$OSTYPE" == "darwin"* ]] && CMAKE_EXTRA=(-DCMAKE_SHARED_LINKER_FLAGS="-undefined dynamic_lookup")
@@ -249,9 +260,10 @@ fi
 if [ -f "../model_fitting/requirements.txt" ]; then
     read -p "Install Python packages for model fitting? (y/n): " install_packages
     if [ "$install_packages" == "y" ]; then
-        echo "Installing Python dependencies..."
+        echo "Installing Python dependencies (same interpreter as CMake: $PY_EXEC)..."
         cd ../model_fitting
-        pip install -r requirements.txt
+        # Always use -m pip so wheels match $PY_EXEC; bare "pip" may be a different Python/arch.
+        "$PY_EXEC" -m pip install -r requirements.txt
         cd ../build
     else
         echo "Skipping Python package installation."
