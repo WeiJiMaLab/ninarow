@@ -81,17 +81,28 @@ case $env in
             echo "Installing SWIG 4.3.0..."
             make install
             
-            # Explicitly fix RPATH on macOS to find Homebrew libraries (pcre2)
+            # Explicitly fix dylib references on macOS so SWIG can load its dependencies
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                echo "Fixing SWIG RPATH for Homebrew libraries..."
+                echo "Fixing SWIG dylib references for Homebrew libraries..."
                 PCRE_PREFIX=$(brew --prefix pcre2 2>/dev/null || brew --prefix)
-                install_name_tool -add_rpath "$PCRE_PREFIX/lib" "$SWIG_EXEC" 2>/dev/null || true
+
+                # Add Homebrew lib dir as an rpath so libpcre2 is found
                 install_name_tool -add_rpath "$BREW_PREFIX/lib" "$SWIG_EXEC" 2>/dev/null || true
-                
+
+                # Hard-wire @rpath/libpcre2-8.0.dylib to its absolute Homebrew path
+                install_name_tool -change "@rpath/libpcre2-8.0.dylib" \
+                    "$PCRE_PREFIX/lib/libpcre2-8.0.dylib" "$SWIG_EXEC" 2>/dev/null || true
+
+                # Hard-wire @rpath/libc++.1.dylib to the macOS system path.
+                # dyld looks for libc++ in rpath entries (e.g. pcre2/lib) where it
+                # doesn't exist; pointing directly at /usr/lib avoids this entirely.
+                install_name_tool -change "@rpath/libc++.1.dylib" \
+                    "/usr/lib/libc++.1.dylib" "$SWIG_EXEC" 2>/dev/null || true
+
                 # Verify it's functional now
                 if ! "$SWIG_EXEC" -swiglib >/dev/null 2>&1; then
-                    echo "⚠️ SWIG still has library loading issues. Attempting absolute path fix..."
-                    install_name_tool -change "@rpath/libpcre2-8.0.dylib" "$PCRE_PREFIX/lib/libpcre2-8.0.dylib" "$SWIG_EXEC" 2>/dev/null || true
+                    echo "⚠️ SWIG still has library loading issues after dylib fix."
+                    echo "   Inspect with: otool -L $SWIG_EXEC"
                 fi
             fi
             
