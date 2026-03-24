@@ -222,17 +222,17 @@ PY_VERSION=$("$PY_EXEC" --version 2>&1)
 echo ""
 echo "⚠️  _swig_fourbynine.so was compiled against: $PY_VERSION ($PY_EXEC)"
 echo "   Always use THIS python to run model_fitting scripts, e.g.:"
-echo "     $PY_EXEC model_fitting/tests/test_installation.py"
+echo "     $PY_EXEC model_fitting/tests/check_installation.py"
 echo ""
 
 # -----------------------------
 # 4. Run Python install test
 # -----------------------------
-if [ -f "../model_fitting/tests/test_installation.py" ]; then
+if [ -f "../model_fitting/tests/check_installation.py" ]; then
     echo "Running Python installation test..."
-    "$PY_EXEC" ../model_fitting/tests/test_installation.py || echo "⚠️ Python test script failed (check dependencies)."
+    "$PY_EXEC" ../model_fitting/tests/check_installation.py || echo "⚠️ Python test script failed (check dependencies)."
 else
-    echo "No test_installation.py found, skipping."
+    echo "No check_installation.py found, skipping."
 fi
 
 # -----------------------------

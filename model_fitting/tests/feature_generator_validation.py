@@ -1,5 +1,7 @@
 """
-Test suite for modular heuristic creation.
+Manual validation suite for modular heuristic creation (not run by pytest).
+
+Run: ``python feature_generator_validation.py`` from ``model_fitting/tests/``.
 
 Verifies that TreeSearch.create_heuristic produces functionally equivalent results
 to the parameter vector approach, demonstrating that heuristics can be constructed
@@ -82,7 +84,7 @@ def compare_heuristics(h1, h2, tolerance=1e-10):
     return are_equal, differences
 
 
-def test_against_bads_parameters():
+def check_against_bads_parameters():
     """
     Test that TreeSearch.create_heuristic produces functionally equivalent results
     to bads_parameters_to_model_parameters (parameter vector approach).
@@ -159,19 +161,19 @@ def test_against_bads_parameters():
     return False, differences  # Always return False for structural comparison
 
 
-def test_against_create_full_custom_heuristic():
+def check_against_create_full_custom_heuristic():
     """
     This test is no longer applicable since create_full_custom_heuristic was removed.
-    The functionality is now tested via test_against_bads_parameters.
+    The functionality is now tested via check_against_bads_parameters.
     """
     print("\n" + "=" * 80)
-    print("Skipping test_against_create_full_custom_heuristic")
+    print("Skipping check_against_create_full_custom_heuristic")
     print("(create_full_custom_heuristic has been removed - functionality tested via bads_parameters)")
     print("=" * 80)
     return True, {}
 
 
-def test_evaluation_equivalence(noise_enabled=False, test_modular=True):
+def check_evaluation_equivalence(noise_enabled=False, test_modular=True):
     """
     Test that heuristics produce identical evaluate() values on test boards.
     
@@ -279,7 +281,7 @@ def test_evaluation_equivalence(noise_enabled=False, test_modular=True):
     return all_match
 
 
-def test_functional_equivalence(noise_enabled=False):
+def check_functional_equivalence(noise_enabled=False):
     """
     Test that heuristics produce the same best moves on test boards.
     
@@ -428,7 +430,7 @@ def parse_dataframe_to_boards(df, n_examples=None):
     return boards
 
 
-def test_evaluation_equivalence_on_dataframe(df, n_examples=10, noise_enabled=False):
+def check_evaluation_equivalence_on_dataframe(df, n_examples=10, noise_enabled=False):
     """
     Test that heuristics produce identical evaluate() values on board positions from a dataframe.
     """
@@ -553,19 +555,19 @@ def main():
     print("=" * 80)
     
     # Test 1: Skipped (create_full_custom_heuristic removed)
-    result1, _ = test_against_create_full_custom_heuristic()
+    result1, _ = check_against_create_full_custom_heuristic()
     results.append(("create_full_custom_heuristic", result1))
     
     # Test 2: Evaluation equivalence (noise disabled) - KEY TEST
-    result2 = test_evaluation_equivalence(noise_enabled=False, test_modular=True)
+    result2 = check_evaluation_equivalence(noise_enabled=False, test_modular=True)
     results.append(("evaluation_equivalence_noise_disabled", result2))
     
     # Test 3: Evaluation equivalence (noise enabled)
-    result3 = test_evaluation_equivalence(noise_enabled=True, test_modular=True)
+    result3 = check_evaluation_equivalence(noise_enabled=True, test_modular=True)
     results.append(("evaluation_equivalence_noise_enabled", result3))
     
     # Test 4: Best move equivalence (noise disabled)
-    result4 = test_functional_equivalence(noise_enabled=False)
+    result4 = check_functional_equivalence(noise_enabled=False)
     results.append(("best_move_equivalence_noise_disabled", result4))
     
     # Skip best move equivalence with noise (stochastic differences expected)
@@ -588,12 +590,12 @@ def main():
                 
                 # Test on dataframe with n_examples
                 n_examples = 20
-                result7 = test_evaluation_equivalence_on_dataframe(
+                result7 = check_evaluation_equivalence_on_dataframe(
                     train_data, n_examples=n_examples, noise_enabled=False
                 )
                 results.append(("dataframe_evaluation_equivalence_noise_disabled", result7))
                 
-                result8 = test_evaluation_equivalence_on_dataframe(
+                result8 = check_evaluation_equivalence_on_dataframe(
                     train_data, n_examples=n_examples, noise_enabled=True
                 )
                 results.append(("dataframe_evaluation_equivalence_noise_enabled", result8))

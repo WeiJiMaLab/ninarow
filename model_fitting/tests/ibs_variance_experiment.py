@@ -1,5 +1,7 @@
 """
-Test IBS variance by calling evaluate multiple times with different repeat values.
+IBS variance experiment (manual / exploratory; not run by pytest).
+
+Run: ``python ibs_variance_experiment.py``
 
 For each n_repeats value, we call evaluate n_calls times and collect the sum of NLLs.
 We then analyze how the variance of these sums changes as n_repeats increases.
@@ -50,7 +52,7 @@ def find_data_folder():
     return None
 
 
-def test_ibs_variance(data_folder=None, n_trials=5, n_calls=30, n_repeats_values=[5, 10, 20]):
+def run_ibs_variance(data_folder=None, n_trials=5, n_calls=30, n_repeats_values=[5, 10, 20]):
     """
     Test how variance changes with different n_repeats values.
     
@@ -239,7 +241,7 @@ def estimate_repeats_for_target_sd(data_folder=None, target_sd=2.0, n_calls=20, 
 
 if __name__ == "__main__":
     # Run the variance test
-    results = test_ibs_variance()
+    results = run_ibs_variance()
     
     # Estimate required repeats for full dataset
     estimate_results = estimate_repeats_for_target_sd(target_sd=2.0)

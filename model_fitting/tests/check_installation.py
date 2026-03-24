@@ -1,3 +1,8 @@
+"""
+Smoke test: import fourbynine after build. Not a pytest module (no test_* functions).
+
+Run: ``python check_installation.py`` from ``model_fitting/`` or ``tests/``.
+"""
 import sys, os
 from pathlib import Path
 
