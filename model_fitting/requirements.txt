@@ -1,4 +1,6 @@
-atomics==1.0.2
+# macOS arm64: PyPI wheels ship x86_64 libpatomic; sdist build is correct.
+--no-binary atomics
+atomics==1.0.3
 graphviz
 matplotlib>=3.7.1
 networkx==3.2.1
