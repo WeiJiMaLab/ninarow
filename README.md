@@ -1,6 +1,6 @@
 # N-in-a-Row Game Engine and Heuristic Model Fitting
 
-This repository provides a high-performance C++ implementation of N-in-a-Row games (like Connect Four) with Python bindings, designed for cognitive modeling and AI research. The system includes game engines, search algorithms, heuristic evaluation functions, and tools for fitting computational models to human behavioral data.
+This repository provides a high-performance C++ implementation of N-in-a-Row games (like Four-in-a-Row) with Python bindings, designed for cognitive modeling and AI research. The system includes game engines, search algorithms, heuristic evaluation functions, and tools for fitting computational models to human behavioral data.
 
 ## Table of Contents
 - [Authorial Credit](#authorial-credit)
