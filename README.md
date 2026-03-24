@@ -176,8 +176,8 @@ python test/test_treesearch_equivalence.py
 
 | Directory/File | Purpose |
 |----------------|---------|
-| `model_fitting/test/test_feature_generator.py` | Verifies heuristic equivalence: `evaluate()` values and best moves match between template-based and parameter-vector approaches |
-| `model_fitting/test/test_treesearch_equivalence.py` | Verifies IBS equivalence: NLL values from `SingleThreadedFitter` and `ModelFitter` match to ~10⁻⁶ precision |
+| `model_fitting/tests/test_feature_generator.py` | Verifies heuristic equivalence: `evaluate()` values and best moves match between template-based and parameter-vector approaches |
+| `model_fitting/tests/test_treesearch_equivalence.py` | Verifies IBS equivalence: NLL values from `SingleThreadedFitter` and `ModelFitter` match to ~10⁻⁶ precision |
 | `test_cpp/*_ut.cpp` | C++ unit tests for corresponding header files |
 
 ### Documentation and Examples

@@ -166,11 +166,11 @@ cmake --build . --config Release
 # -----------------------------
 # 4. Run Python install test
 # -----------------------------
-if [ -f "../model_fitting/install_test.py" ]; then
+if [ -f "../model_fitting/tests/test_installation.py" ]; then
     echo "Running Python installation test..."
-    "$PY_EXEC" ../model_fitting/install_test.py || echo "⚠️ Python test script failed (check dependencies)."
+    "$PY_EXEC" ../model_fitting/tests/test_installation.py || echo "⚠️ Python test script failed (check dependencies)."
 else
-    echo "No install_test.py found, skipping."
+    echo "No test_installation.py found, skipping."
 fi
 
 # -----------------------------
