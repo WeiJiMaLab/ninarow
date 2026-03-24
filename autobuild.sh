@@ -180,13 +180,20 @@ mkdir -p build
 cd build
 
 echo "Running CMake..."
-# On macOS, prefer Homebrew Python for the SWIG extension (avoids conda-related import segfault).
-if [[ "$OSTYPE" == "darwin"* ]]; then
+# Prefer the Python that the user will actually run code with:
+# 1. Already-active conda/venv Python (i.e. first python3 on PATH)
+# 2. Homebrew Python (macOS fallback)
+# 3. Any python3 / python
+# Rationale: the .so is compiled against a specific Python C ABI. Using a
+# *different* Python interpreter to load it causes a segfault. Always build
+# with the Python the user will run.
+PY_EXEC=$(which python3 2>/dev/null || which python 2>/dev/null)
+if [[ -z "$PY_EXEC" ]] && [[ "$OSTYPE" == "darwin"* ]]; then
+  # Last resort: Homebrew Python
   for p in "$BREW_PREFIX/bin/python3" /usr/local/bin/python3; do
     [ -x "$p" ] && PY_EXEC=$p && break
   done
 fi
-PY_EXEC=${PY_EXEC:-$(which python3 2>/dev/null || which python)}
 SWIG_EXEC=${SWIG_EXEC:-$(which swig)}
 echo "Using Python executable: $PY_EXEC"
 echo "Using SWIG: $SWIG_EXEC"
@@ -197,6 +204,15 @@ cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discove
 
 # Limit build parallelism safely on login nodes
 cmake --build . --config Release
+
+# Print a clear reminder: the .so is linked against PY_EXEC only.
+# Running the test with ANY other Python will segfault.
+PY_VERSION=$("$PY_EXEC" --version 2>&1)
+echo ""
+echo "⚠️  _swig_fourbynine.so was compiled against: $PY_VERSION ($PY_EXEC)"
+echo "   Always use THIS python to run model_fitting scripts, e.g.:"
+echo "     $PY_EXEC model_fitting/tests/test_installation.py"
+echo ""
 
 # -----------------------------
 # 4. Run Python install test
