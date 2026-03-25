@@ -47,6 +47,16 @@ class MultiThreadedFitter:
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
 
+    def __getstate__(self):
+        """Exclude live Pool from pickle/deepcopy (e.g. pybads OptimizeResult)."""
+        state = self.__dict__.copy()
+        state["_pool"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._pool = None
+
     def get_random_order(self, n):
         """Generate a random permutation of indices [0, n) using the same method as original."""
         indices = list(range(n))
@@ -68,9 +78,10 @@ class MultiThreadedFitter:
 
     def close(self):
         """Shut down the worker pool."""
-        if self._pool is not None:
-            self._pool.terminate()
-            self._pool.join()
+        pool = getattr(self, "_pool", None)
+        if pool is not None:
+            pool.terminate()
+            pool.join()
             self._pool = None
 
     def __del__(self):
@@ -132,7 +143,7 @@ class MultiThreadedFitter:
             bads_options={
                             'uncertainty_handling': True,
                             'noise_final_samples': 0,
-                            'max_fun_evals': 1000,
+                            'max_fun_evals': 100,
                         }):
         """
         Fit the model to data using BADS optimization.
