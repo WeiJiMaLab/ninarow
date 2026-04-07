@@ -37,12 +37,14 @@ class MultiThreadedFitter:
     Parallelized fitter using multiprocessing Pool.
     With n_workers=1, produces bit-for-bit identical results to SingleThreadedFitter.
     """
-    def __init__(self, model: TreeSearch, verbose=False, n_workers=-1):
+    def __init__(self, model: TreeSearch, verbose=False, n_repeats = 100, n_workers=-1):
         self.model = model
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.repeats = 50
+        self.repeats = n_repeats
+        self.start_repeats = 5
+        self.full_repeats = 100
         self.last_seed = None
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
@@ -164,7 +166,7 @@ class MultiThreadedFitter:
         self.__class__.check_dataframe(data)
         self.data = data
 
-        self.repeats, self.iteration_count = 5, 0
+        self.repeats, self.iteration_count = self.start_repeats, 0
 
         self.print_params(self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound)
         warm_start_bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, 
@@ -175,7 +177,7 @@ class MultiThreadedFitter:
         warm_plb = np.maximum(self.model.lower_bound, warm_start_params - 0.25 * width)
         warm_pub = np.minimum(self.model.upper_bound, warm_start_params + 0.25 * width)
 
-        self.repeats, self.iteration_count = 100, 0
+        self.repeats, self.iteration_count = self.full_repeats, 0
         self.print_params(warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub)
         bads = BADS(self.optimize, warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub, 
                 options={**bads_options, 'max_fun_evals': 1000})
