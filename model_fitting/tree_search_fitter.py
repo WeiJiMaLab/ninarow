@@ -37,12 +37,12 @@ class MultiThreadedFitter:
     Parallelized fitter using multiprocessing Pool.
     With n_workers=1, produces bit-for-bit identical results to SingleThreadedFitter.
     """
-    def __init__(self, model: TreeSearch, n_repeats=50, verbose=False, n_workers=-1):
+    def __init__(self, model: TreeSearch, verbose=False, n_workers=-1):
         self.model = model
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.repeats = n_repeats
+        self.repeats = 50
         self.last_seed = None
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
@@ -128,22 +128,31 @@ class MultiThreadedFitter:
         self.time = time()
         nlls = self.evaluate(x, self.data).sum()
         if self.verbose: 
+            param_print = {param_name: np.round(x_, 3).item() for param_name, x_ in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
                   f"NLL (n_repeats={self.repeats}): {nlls:.5g}\t "
-                  f"Params: {[np.round(x_, 3) for x_ in x]}")
+                  f"Params: {param_print}")
                   
         self.iteration_count += 1
         return nlls
-    
+
+    def print_params(self, x, lower_bound, upper_bound, plausible_lower_bound, plausible_upper_bound):
+        header = f"{'Parameter':>20} :\t{'lo'}\t{'plo'}\t{'x0'}\t{'phi'}\t{'hi'}"
+        print(header)
+        for param_name, x_, lo, hi, plo, phi in zip(
+            self.model.param_names, x, lower_bound, upper_bound, plausible_lower_bound, plausible_upper_bound
+        ):
+            print(f"{param_name:>20}:\t{lo:.3f}\t{plo:.3f}\t{x_:.3f}\t{phi:.3f}\t{hi:.3f}")
+            
     def fit(self, 
             data: pd.DataFrame, 
             manual_seed=None, 
             bads_options={
                             'uncertainty_handling': True,
                             'noise_final_samples': 0,
-                            'max_fun_evals': 100,
+                            'tol_fun': 1e-2,
                         }):
         """
         Fit the model to data using BADS optimization.
@@ -155,7 +164,22 @@ class MultiThreadedFitter:
         self.__class__.check_dataframe(data)
         self.data = data
 
-        bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
+        self.repeats, self.iteration_count = 5, 0
+
+        self.print_params(self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound)
+        warm_start_bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, 
+                options={**bads_options, 'max_fun_evals': 200})
+
+        warm_start_params = warm_start_bads.optimize()['x']
+        width = self.model.plausible_upper_bound - self.model.plausible_lower_bound
+        warm_plb = np.maximum(self.model.lower_bound, warm_start_params - 0.25 * width)
+        warm_pub = np.minimum(self.model.upper_bound, warm_start_params + 0.25 * width)
+
+        self.repeats, self.iteration_count = 100, 0
+        self.print_params(warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub)
+        bads = BADS(self.optimize, warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub, 
+                options={**bads_options, 'max_fun_evals': 1000})
+
         fitted_params = bads.optimize()['x']
 
         print(f"\t[Fitted Parameters]\t {fitted_params}")

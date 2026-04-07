@@ -50,7 +50,6 @@ _tsf = _load_module_from_path("tree_search_fitter", _MODEL_FITTING / "tree_searc
 
 TreeSearch = _ts.TreeSearch
 MyopicTreeSearch = _ts.MyopicTreeSearch
-MyopicSimpleTreeSearch = _ts.MyopicSimpleTreeSearch
 MyopicSelfOnlyTreeSearch = _ts.MyopicSelfOnlyTreeSearch
 SingleThreadedFitter = _ts.SingleThreadedFitter
 DefaultModel = _mf.DefaultModel
@@ -109,13 +108,6 @@ def _build_myopic_self_only_tree_search(cutoff, feature_drop):
         initial_weights=TEST_WEIGHTS_4GROUP,
         verbose=False,
     )
-    model.cutoff = cutoff
-    _pin_feature_drop(model, feature_drop)
-    return model
-
-
-def _build_myopic_simple_tree_search(cutoff, feature_drop):
-    model = MyopicSimpleTreeSearch(verbose=False)
     model.cutoff = cutoff
     _pin_feature_drop(model, feature_drop)
     return model
@@ -373,7 +365,6 @@ def test_singlethreaded_vs_model_fit_nll_equivalence():
         pytest.param(_default_build_tree_search, id="TreeSearch"),
         pytest.param(_build_myopic_tree_search, id="MyopicTreeSearch"),
         pytest.param(_build_myopic_self_only_tree_search, id="MyopicSelfOnlyTreeSearch"),
-        pytest.param(_build_myopic_simple_tree_search, id="MyopicSimpleTreeSearch"),
     ],
 )
 def test_multithreaded_vs_singlethreaded_nll_equivalence(build_model):
