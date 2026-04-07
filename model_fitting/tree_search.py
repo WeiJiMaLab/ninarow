@@ -26,18 +26,16 @@ from feature_generator import (
     create_modular_heuristic,
     DEFAULT_TEMPLATES,
     DEFAULT_FEATURE_WEIGHTS,
-    SIMPLE_TEMPLATES,
-    SIMPLE_FEATURE_WEIGHTS,
     create_feature
 )
 
 DEFAULT_PARAMETER_LIST = [
-            {"name": "pruning_threshold", "initial_value": 0.05, "lower_bound": 0.001, "upper_bound": 10, "plausible_lower_bound": 0.01, "plausible_upper_bound": 6},
-            {"name": "stopping_prob", "initial_value": 0.9, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.3, "plausible_upper_bound": 1.0},
+            {"name": "pruning_threshold", "initial_value": 0.2, "lower_bound": 0.0001, "upper_bound": 10, "plausible_lower_bound": 0.1, "plausible_upper_bound": 8},
+            {"name": "stopping_prob", "initial_value": 0.9, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.3, "plausible_upper_bound": 0.99},
             {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.5},
-            {"name": "lapse_rate", "initial_value": 0.3, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.5},
+            {"name": "lapse_rate", "initial_value": 0.3, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.2},
             {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.25, "plausible_upper_bound": 4},
-            {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -5, "plausible_upper_bound": 5},
+            {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -2, "plausible_upper_bound": 2},
 ]
     
 class TreeSearch:
@@ -62,11 +60,11 @@ class TreeSearch:
         for group in self.sorted_groups:
             self.parameter_list.append({
                 "name": group,
-                "initial_value": self.initial_weights[group],
-                "lower_bound": -10,
-                "upper_bound": 20,
-                "plausible_lower_bound": -5,
-                "plausible_upper_bound": 15,
+                "initial_value": 0,
+                "lower_bound": -20,
+                "upper_bound": 100,
+                "plausible_lower_bound": -10,
+                "plausible_upper_bound": 20
             })
 
         # Compile parameters for optimization
@@ -79,19 +77,7 @@ class TreeSearch:
         self.upper_bound = np.array([param["upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.lower_bound = np.array([param["lower_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
-        self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)
-
-        if verbose:
-            print(f"{'Parameter':>20} : {'lo':>8} {'plo':>8} {'x0':>8} {'phi':>8} {'hi':>8}")
-            for p in self.parameter_list:
-                print(
-                    f"{p['name']:>20} : "
-                    f"{p['lower_bound']:>8.3f} "
-                    f"{p['plausible_lower_bound']:>8.3f} "
-                    f"{p['initial_value']:>8.3f} "
-                    f"{p['plausible_upper_bound']:>8.3f} "
-                    f"{p['upper_bound']:>8.3f}"
-                )        
+        self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)        
 
     def create_heuristic(self, control_vec, feature_vec):
         """
@@ -174,7 +160,6 @@ class TreeSearch:
         with open(filename, 'rb') as f:
             return pickle.load(f)
 
-
 class MyopicTreeSearch(TreeSearch):
     """
     Myopic tree search model that constructs heuristics from templates.
@@ -186,7 +171,7 @@ class MyopicTreeSearch(TreeSearch):
     """
     def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
         super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose = verbose)
-        self.name = "MyopicTreeSearch"
+        self.name = "Myopic"
 
     def set_params(self, params):
         """Set parameters and construct heuristic from templates (vectorized, fixed order)."""
@@ -204,20 +189,13 @@ class MyopicTreeSearch(TreeSearch):
         if hasattr(self, '_fitter'):
             self._fitter.last_seed = random_seed
 
-
-class MyopicSimpleTreeSearch(MyopicTreeSearch):
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=SIMPLE_TEMPLATES, initial_weights=SIMPLE_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose=verbose)
-        self.name = "MyopicSimpleTreeSearch"
-
-
 class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     """
     Myopic tree search which ignores the opponent's features.
     """
     def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
         super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_weights, verbose=verbose)
-        self.name = "MyopicSelfOnlyTreeSearch"
+        self.name = "SelfOnly"
     
     def set_params(self, params):
         """Set parameters and construct heuristic from templates (vectorized, fixed order)."""
