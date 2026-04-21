@@ -9,6 +9,10 @@ line up with tree_search fitters for arbitrary n_repeats.
 (3) Optional: scan n_repeats and compare ST vs MT ratios (more IBS work per trial).
 (4) Optional: scan n_trials (default practical grid: 128, 256, 512; rows tiled if needed).
 (5) BADS: one short ``fit()`` (low ``max_fun_evals``); assert ST vs MT(1) match; time ST vs MT(1,6,12).
+
+Run as ``python tests/test_timing.py`` (no pytest) to print the ST vs MT dataset-size table
+(128 / 256 / 512 trials, ``n_repeats=20`` by default). Use ``--phase1`` for equivalence +
+single-size timing instead.
 """
 import contextlib
 import importlib.util
@@ -377,7 +381,7 @@ def benchmark_st_vs_mt_trials(
     n_iterations=5,
     manual_seed=1,
     feature_drop=0.0,
-    n_repeats=10,
+    n_repeats=20,
     verbose=True,
 ):
     """
@@ -503,13 +507,14 @@ def _print_timing_table(rows, verbose):
 # ---------------------------------------------------------------------------
 
 def test_equivalence_and_timing():
-    assert run_timing_test(
-        n_trials=20,
-        n_iterations=20,
-        manual_seed=1,
-        verbose=False,
-        n_repeats=1,
-    )
+    for n_trials in (128, 256, 512):
+        assert run_timing_test(
+            n_trials=n_trials,
+            n_iterations=20,
+            manual_seed=1,
+            verbose=False,
+            n_repeats=20,
+        )
 
 
 def test_bads_fit_singlethreaded_vs_multithreaded():
@@ -560,11 +565,16 @@ if __name__ == "__main__":
         "--trials-scan",
         type=int,
         nargs="*",
-        default=None,
+        default=[128, 256, 512],
         metavar="N",
-        help="Run ST vs MT1/MT6/MT* by dataset size. "
-        "Use with explicit sizes, or pass no values for default 128 256 512. "
+        help="Run ST vs MT1/MT6/MT* by dataset size (default: 128 256 512). "
+        "Pass with no numbers for the same default. "
         "Rows are tiled if CSV is shorter. Uses --n-repeats-for-trials-scan.",
+    )
+    parser.add_argument(
+        "--no-trials-scan",
+        action="store_true",
+        help="Do not print the dataset-size benchmark table (only optional scans / phase1).",
     )
     parser.add_argument(
         "--bads-mini",
@@ -574,19 +584,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--practical-bench",
         action="store_true",
-        help="Shortcut: --trials-scan 128 256 512 --n-repeats-for-trials-scan 10 "
-        "and --skip-phase1 (equivalence + phase-2 timing skipped).",
+        help="Obsolete: default behavior is already trials-scan 128 256 512.",
     )
     parser.add_argument(
-        "--skip-phase1",
+        "--phase1",
         action="store_true",
-        help="Skip equivalence + phase-2 timing; only run optional scans.",
+        help="Run equivalence + phase-2 timing (run_timing_test) using --n-trials / --n-repeats.",
     )
     parser.add_argument(
         "--n-repeats-for-trials-scan",
         type=int,
-        default=10,
-        help="IBS n_repeats per trial in --trials-scan (default: 10)",
+        default=20,
+        help="IBS n_repeats per trial in --trials-scan (default: 20)",
     )
     parser.add_argument(
         "--n-iterations-trials-scan",
@@ -597,16 +606,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.practical_bench:
-        args.skip_phase1 = True
-        if args.trials_scan is None:
-            args.trials_scan = [128, 256, 512]
-        elif len(args.trials_scan) == 0:
-            args.trials_scan = [128, 256, 512]
+    if args.practical_bench and len(args.trials_scan) == 0:
+        args.trials_scan = [128, 256, 512]
 
     # --trials-scan with no numbers yields []; treat as default grid
-    if args.trials_scan is not None and len(args.trials_scan) == 0:
+    if len(args.trials_scan) == 0:
         args.trials_scan = [128, 256, 512]
+
+    if args.no_trials_scan:
+        trials_scan_list = None
+    else:
+        trials_scan_list = args.trials_scan
 
     if args.bads_mini:
         success = run_bads_fit_equivalence_test(
@@ -617,7 +627,7 @@ if __name__ == "__main__":
             n_repeats=args.n_repeats,
             verbose=True,
         )
-    elif not args.skip_phase1:
+    elif args.phase1:
         success = run_timing_test(
             data_folder=args.data_folder,
             n_trials=args.n_trials,
@@ -639,10 +649,10 @@ if __name__ == "__main__":
             verbose=True,
         )
 
-    if args.trials_scan is not None:
+    if trials_scan_list is not None:
         benchmark_st_vs_mt_trials(
             data_folder=args.data_folder,
-            n_trials_list=tuple(args.trials_scan),
+            n_trials_list=tuple(trials_scan_list),
             n_iterations=args.n_iterations_trials_scan,
             manual_seed=args.seed,
             n_repeats=args.n_repeats_for_trials_scan,
