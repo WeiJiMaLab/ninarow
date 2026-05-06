@@ -6,7 +6,7 @@ try:
 except ImportError:
     pass
 
-# Default templates matching Julia structure
+# Default patterns for feature generation
 DEFAULT_TEMPLATES = {
     "4IAR": [[1, 1, 1, 1]],
     "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
@@ -22,21 +22,7 @@ DEFAULT_FEATURE_WEIGHTS = {
 }
 
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
-    """
-    Generate all possible positions for k-in-a-row patterns.
-    Mimics Julia's win_patterns function.
-    
-    Args:
-        m: Number of rows (default 4)
-        n: Number of columns (default 9)
-        k: Length of pattern (default 4)
-        directions: String of directions: '-' horizontal, '|' vertical, 
-                   '\\' diagonal, '/' anti-diagonal
-    
-    Returns:
-        List of tuples: (direction, positions_list)
-        where positions_list contains lists of board positions (0-indexed)
-    """
+    """Generate all k-in-a-row board positions for given dimensions and directions."""
     patterns = []
     
     # Horizontal: '-'
@@ -70,19 +56,7 @@ def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
     return patterns
 
 def make_feature_from_template(template, m=4, n=9, directions="-/\\|"):
-    """
-    Create features from a template for all possible positions.
-    Mimics Julia's make_feature_from_template function.
-    
-    Args:
-        template: List of 0s and 1s (e.g., [0, 1, 1, 1] for 3IAR)
-        m: Number of rows (default 4)
-        n: Number of columns (default 9)
-        directions: Directions to generate patterns for
-    
-    Returns:
-        List of tuples: (pieces_bitboard, spaces_bitboard, min_empty)
-    """
+    """Tile a template across the board to create bitboard features."""
     k = len(template)
     patterns = win_patterns(m, n, k, directions)
     features = []
@@ -95,10 +69,7 @@ def make_feature_from_template(template, m=4, n=9, directions="-/\\|"):
         pieces = 0
         spaces = 0
         
-        for i, pos in enumerate(positions):
-            # Convert to 0-indexed for bit manipulation
-            bit_pos = pos
-            
+        for i, bit_pos in enumerate(positions):
             if template[i] == 1:
                 # This position should have a piece
                 pieces |= (1 << bit_pos)
@@ -111,19 +82,7 @@ def make_feature_from_template(template, m=4, n=9, directions="-/\\|"):
     return features
 
 def make_features_from_groups(group_templates, m=4, n=9, directions="-/\\|"):
-    """
-    Create features from a dictionary of group templates.
-    Mimics Julia's make_features_from_groups function.
-    
-    Args:
-        group_templates: Dict mapping group names to lists of templates
-        m: Number of rows (default 4)
-        n: Number of columns (default 9)
-        directions: Directions to generate patterns for
-    
-    Returns:
-        Dict mapping group names to lists of (pieces, spaces, min_empty) tuples
-    """
+    """Batch generate features for a dictionary of template groups."""
     features_by_group = {}
     
     for group_name, templates in sorted(group_templates.items()):
@@ -136,10 +95,7 @@ def make_features_from_groups(group_templates, m=4, n=9, directions="-/\\|"):
     return features_by_group
 
 def create_feature(pieces, empty, min_empty):
-    """
-    Create a heuristic feature from bitboards.
-    Wrapper around fourbynine_heuristic_feature.
-    """
+    """Convert bitboards into a fourbynine heuristic feature."""
     return fourbynine_heuristic_feature(
         fourbynine_pattern(pieces), 
         fourbynine_pattern(empty), 
@@ -148,51 +104,33 @@ def create_feature(pieces, empty, min_empty):
 
 
 def build_control_params(control_params):
-    """
-    Returns the 7 control parameters in the correct order.
-    """
+    """Order control parameters for the C++ heuristic constructor."""
     pruning = control_params["pruning_threshold"]
     stop_prob = control_params["stopping_prob"]
     lapse = control_params["lapse_rate"]
     center_weight = control_params["center_weight"]
 
     base_control = [
-        10000.0,         # fixed stopping threshold
+        10000.0,         # Fixed stopping threshold
         pruning,
         stop_prob,
         lapse,
-        1.0,             # exploration constant placeholder
-        1.0,             # opponent scale placeholder
+        1.0,             # Exploration constant placeholder
+        1.0,             # Opponent scale placeholder
         center_weight
     ]
     return base_control
 
 def create_modular_heuristic(control_params, weights, templates=DEFAULT_TEMPLATES):
-    """
-    Create a heuristic from scratch using templates to generate features.
-    
-    This function creates feature groups for each template type and generates
-    features from the templates using make_features_from_groups. The modular
-    design allows flexible heuristic construction without relying on hardcoded
-    C++ features.
-    
-    Args:
-        control_params: Dict with keys: pruning_threshold, stopping_prob, lapse_rate, 
-                       center_weight, opp_scale, feature_drop
-        weights: Dict mapping group names to weights (e.g., {"2IAR_CON": 1.0, "4IAR": 8.0})
-        templates: Dict mapping group names to lists of templates (defaults to DEFAULT_TEMPLATES)
-    
-    Returns:
-        A heuristic created from scratch using templates, with one feature group per template type
-    """
-    # 1. Create heuristic with control parameters (no features yet)
+    """Initialize a full heuristic from a set of control parameters and pattern weights."""
+    # Initialize heuristic with control parameters
     control_vec = build_control_params(control_params)
     heuristic = fourbynine_heuristic.create(DoubleVector(control_vec), False)
     
-    # 2. Generate features from templates
+    # Generate features from templates
     features_by_group = make_features_from_groups(templates)
     
-    # 3. Create feature groups and add features
+    # Create feature groups and add features
     sorted_groups = sorted(templates.keys())
     opp_scale = control_params["opp_scale"]
     feature_drop = control_params["feature_drop"]
