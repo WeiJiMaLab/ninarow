@@ -6,20 +6,7 @@ try:
 except ImportError:
     pass
 
-# Default patterns for feature generation
-DEFAULT_TEMPLATES = {
-    "4IAR": [[1, 1, 1, 1]],
-    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
-    "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
-    "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
-}
 
-DEFAULT_FEATURE_WEIGHTS = {
-    "2IAR_CON": 1.0,
-    "2IAR_DIS": 1.0,
-    "3IAR": 1.0,
-    "4IAR": 1.0,
-}
 
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
     """Generate all k-in-a-row board positions for given dimensions and directions."""
@@ -121,7 +108,7 @@ def build_control_params(control_params):
     ]
     return base_control
 
-def create_modular_heuristic(control_params, weights, templates=DEFAULT_TEMPLATES):
+def create_modular_heuristic(control_params, weights, templates):
     """Initialize a full heuristic from a set of control parameters and pattern weights."""
     # Initialize heuristic with control parameters
     control_vec = build_control_params(control_params)

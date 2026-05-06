@@ -21,8 +21,7 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-from tree_search import TreeSearch
-from feature_generator import DEFAULT_TEMPLATES, DEFAULT_FEATURE_WEIGHTS
+from tree_search import TreeSearch, DEFAULT_TEMPLATES
 from ninarow_utilities import bads_parameters_to_model_parameters
 
 
@@ -129,7 +128,7 @@ def check_against_bads_parameters():
     
     # Create heuristic from scratch using TreeSearch.create_heuristic
     print("2. Creating heuristic using TreeSearch.create_heuristic...")
-    ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
+    ts = TreeSearch(templates=DEFAULT_TEMPLATES)
     # Convert dictionaries to vectors in correct order
     control_vec = [
         control_params["pruning_threshold"],
@@ -220,7 +219,7 @@ def check_evaluation_equivalence(noise_enabled=False, test_modular=True):
     heuristic_current = fourbynine_heuristic.create(DoubleVector(model_params), True)
     
     # Modular approach using TreeSearch
-    ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
+    ts = TreeSearch(templates=DEFAULT_TEMPLATES)
     # Convert dictionaries to vectors in correct order
     control_vec = [
         control_params["pruning_threshold"],
@@ -334,7 +333,7 @@ def check_functional_equivalence(noise_enabled=False):
     ]
     model_params = bads_parameters_to_model_parameters(bads_params)
     heuristic_current = fourbynine_heuristic.create(DoubleVector(model_params), True)
-    ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
+    ts = TreeSearch(templates=DEFAULT_TEMPLATES)
     # Convert dictionaries to vectors in correct order
     control_vec = [
         control_params["pruning_threshold"],
@@ -481,7 +480,7 @@ def check_evaluation_equivalence_on_dataframe(df, n_examples=10, noise_enabled=F
     ]
     model_params = bads_parameters_to_model_parameters(bads_params)
     heuristic_current = fourbynine_heuristic.create(DoubleVector(model_params), True)
-    ts = TreeSearch(templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS)
+    ts = TreeSearch(templates=DEFAULT_TEMPLATES)
     # Convert dictionaries to vectors in correct order
     control_vec = [
         control_params["pruning_threshold"],

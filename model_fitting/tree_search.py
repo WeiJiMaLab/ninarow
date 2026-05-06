@@ -23,19 +23,25 @@ import fourbynine
 from fourbynine import DoubleVector
 from feature_generator import (
     make_features_from_groups, 
-    create_modular_heuristic,
-    DEFAULT_TEMPLATES,
-    DEFAULT_FEATURE_WEIGHTS,
     create_feature
 )
 
+DEFAULT_TEMPLATES = {
+    "4IAR": [[1, 1, 1, 1]],
+    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
+    "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
+    "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
+}
+
+
+
 DEFAULT_PARAMETER_LIST = [
-            {"name": "pruning_threshold", "initial_value": 0.2, "lower_bound": 0.0001, "upper_bound": 10, "plausible_lower_bound": 0.1, "plausible_upper_bound": 8},
-            {"name": "stopping_prob", "initial_value": 0.9, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.3, "plausible_upper_bound": 0.99},
-            {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.5},
-            {"name": "lapse_rate", "initial_value": 0.3, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.2},
-            {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.25, "plausible_upper_bound": 4},
-            {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -2, "plausible_upper_bound": 2},
+    {"name": "pruning_threshold", "initial_value": 0.2, "lower_bound": 0.0001, "upper_bound": 10, "plausible_lower_bound": 0.1, "plausible_upper_bound": 8},
+    {"name": "stopping_prob", "initial_value": 0.9, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.3, "plausible_upper_bound": 0.99},
+    {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.5},
+    {"name": "lapse_rate", "initial_value": 0.3, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.2},
+    {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.25, "plausible_upper_bound": 4},
+    {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -2, "plausible_upper_bound": 2},
 ]
     
 class TreeSearch:
@@ -47,14 +53,13 @@ class TreeSearch:
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
         self.name = "TreeSearch"
         
         self.parameter_list = parameter_list.copy()
         self.templates = templates.copy()
         self.sorted_groups = sorted(self.templates.keys())
         self.features = make_features_from_groups(self.templates)
-        self.initial_weights = initial_weights.copy()
 
         # Add feature weight parameters (one per template group)
         for group in self.sorted_groups:
@@ -169,8 +174,8 @@ class MyopicTreeSearch(TreeSearch):
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_weights, verbose = verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, verbose = verbose)
         self.name = "Myopic"
 
     def set_params(self, params):
@@ -193,8 +198,8 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     """
     Myopic tree search which ignores the opponent's features.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_weights=DEFAULT_FEATURE_WEIGHTS, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_weights, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, verbose=verbose)
         self.name = "SelfOnly"
     
     def set_params(self, params):
@@ -210,6 +215,18 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
         self.heuristic.seed_generator(random_seed)
         if hasattr(self, "_fitter"):
             self._fitter.last_seed = random_seed
+
+class LesionTreeSearch(TreeSearch):
+    """
+    A TreeSearch model with a specific template group removed (lesioned).
+    """
+    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose=True):
+        # Filter out the lesioned key
+        lesioned_templates = {k: v for k, v in templates.items() if k != lesion_key}
+        
+        super().__init__(parameter_list=parameter_list, templates=lesioned_templates, verbose=verbose)
+        self.name = f"Lesion_{lesion_key}"
+
 
 class SingleThreadedFitter:
     """
