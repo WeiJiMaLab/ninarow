@@ -157,14 +157,14 @@ class MultiThreadedFitter:
     Parallelized fitter using multiprocessing Pool.
     With n_workers=1, produces bit-for-bit identical results to SingleThreadedFitter.
     """
-    def __init__(self, model: TreeSearch, verbose=False, n_repeats = 100, n_workers=-1):
+    def __init__(self, model: TreeSearch, verbose=False, n_repeats = 50, n_workers=-1):
         self.model = model
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
         self.repeats = n_repeats
         self.start_repeats = 5
-        self.full_repeats = 100
+        self.full_repeats = 50
         self.last_seed = None
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
