@@ -53,7 +53,7 @@ class TreeSearch:
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
         self.name = "TreeSearch"
         
         self.parameter_list = parameter_list.copy()
@@ -63,9 +63,12 @@ class TreeSearch:
 
         # Add feature weight parameters (one per template group)
         for group in self.sorted_groups:
+            initial_value = 0
+            if initial_values is not None:
+                initial_value = initial_values.get(group, 0)
             self.parameter_list.append({
                 "name": group,
-                "initial_value": 0,
+                "initial_value": initial_value,
                 "lower_bound": -20,
                 "upper_bound": 100,
                 "plausible_lower_bound": -10,
@@ -112,7 +115,9 @@ class TreeSearch:
         # 2. Add feature groups and features
         for weight, group_name in zip(feature_vec, self.sorted_groups):
             weight = float(weight)
-            heuristic.add_feature_group(weight * float(opp_scale), weight, float(feature_drop))
+            # opp_scale is now meant to be the scale of the opponent's features
+            # e.g. 0.5 means opponent features mean half as much as self features
+            heuristic.add_feature_group(weight, weight * float(opp_scale), float(feature_drop))
             group_idx = len(heuristic.get_feature_group_weights()) - 1
             for pieces, spaces, min_empty in self.features[group_name]:
                 heuristic.add_feature(group_idx, create_feature(pieces, spaces, min_empty))
@@ -174,8 +179,8 @@ class MyopicTreeSearch(TreeSearch):
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, verbose = verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_values=initial_values, verbose=verbose)
         self.name = "Myopic"
 
     def set_params(self, params):
@@ -198,8 +203,8 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     """
     Myopic tree search which ignores the opponent's features.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose = True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_values=initial_values, verbose=verbose)
         self.name = "SelfOnly"
     
     def set_params(self, params):
@@ -220,10 +225,10 @@ class LesionTreeSearch(TreeSearch):
     """
     A TreeSearch model with a specific template group removed (lesioned).
     """
-    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, verbose=True):
+    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
         # Filter out the lesioned key
         lesioned_templates = {k: v for k, v in templates.items() if k != lesion_key}
         
-        super().__init__(parameter_list=parameter_list, templates=lesioned_templates, verbose=verbose)
+        super().__init__(parameter_list=parameter_list, templates=lesioned_templates, initial_values=initial_values, verbose=verbose)
         self.name = f"Lesion_{lesion_key}"
 
