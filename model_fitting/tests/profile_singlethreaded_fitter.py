@@ -31,8 +31,9 @@ def _load(name, path):
 
 
 _ts = _load("tree_search", _MODEL_FITTING / "tree_search.py")
+_tsf = _load("tree_search_fitter", _MODEL_FITTING / "tree_search_fitter.py")
 TreeSearch = _ts.TreeSearch
-SingleThreadedFitter = _ts.SingleThreadedFitter
+SingleThreadedFitter = _tsf.SingleThreadedFitter
 
 import glob
 import pandas as pd

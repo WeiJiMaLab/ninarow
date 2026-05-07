@@ -14,7 +14,7 @@ This repository provides a high-performance C++ implementation of N-in-a-Row gam
   - [Documentation and Examples](#documentation-and-examples)
 - [Model Fitting: Dual Implementation Approach](#model-fitting-dual-implementation-approach)
   - [model_fit.py: Original Implementation](#modelfitpy-original-implementation)
-  - [tree_search.py: Modular Implementation](#treesearchpy-modular-implementation)
+  - [tree_search_fitter.py: Specialized Fitters](#tree_search_fitterpy-specialized-fitters)
   - [When to Use Which](#when-to-use-which)
 - [Modular Heuristic Design](#modular-heuristic-design)
 - [Key Features](#key-features)
@@ -41,8 +41,8 @@ The repository consists of three main components:
 3. **Model Fitting Framework**: Tools for fitting computational models to human behavioral data
 
 The model fitting framework provides two complementary implementations:
-- **`model_fit.py`**: Original implementation using parameter vector approach (legacy compatibility)
-- **`tree_search.py`**: Modern modular implementation using template-based heuristic construction
+- **`tree_search.py`**: Modern modular model definitions using template-based heuristic construction
+- **`tree_search_fitter.py`**: Specialized fitting engines (Single and Multi-threaded) for modular models
 
 Both implementations produce identical results but offer different levels of flexibility for feature definition and heuristic construction.
 
@@ -155,7 +155,8 @@ python test/test_treesearch_equivalence.py
 | File | Purpose |
 |------|---------|
 | `model_fit.py` | Original model fitting pipeline using parameter vector approach |
-| `tree_search.py` | Modular model fitting implementation using template-based heuristics |
+| `tree_search.py` | Modular model definitions (TreeSearch, Myopic, etc.) |
+| `tree_search_fitter.py` | Fitting engines (SingleThreadedFitter, MultiThreadedFitter) |
 | `feature_generator.py` | Modular heuristic construction from templates |
 | `ninarow_utilities.py` | Game-specific utilities and parameter conversion |
 
@@ -207,14 +208,14 @@ The repository provides two implementations for model fitting that are **functio
 
 Both implementations use Inverse Binomial Sampling (IBS) to estimate log-likelihoods of model parameters given observed human moves. Despite architectural differences, they produce identical results:
 
-| Aspect | `model_fit.py` | `tree_search.py` |
+| Aspect | `model_fit.py` | `tree_search_fitter.py` |
 |--------|----------------|------------------|
-| Heuristic construction | 58-parameter vector, 17 feature groups | Template-based, 4 feature groups |
+| Heuristic construction | 58-parameter vector, 17 feature groups | Template-based, custom feature groups |
 | Trial processing | Interleaved across trials | Sequential per trial |
-| Parallelization | Multiprocessing pool | Single-threaded |
+| Parallelization | Multiprocessing pool | Single or Multi-threaded engines |
 | **NLL output** | **Identical** | **Identical** |
 
-The test suite (`test/test_treesearch_equivalence.py`) verifies this by running both implementations on the same data with matched parameters and confirming NLL values match to within ~10⁻⁶ (floating point precision).
+The test suite (`tests/test_treesearch_equivalence.py`) verifies this by running both implementations on the same data with matched parameters and confirming NLL values match to within ~10⁻⁶ (floating point precision).
 
 ### model_fit.py: Original Implementation
 
@@ -235,34 +236,28 @@ fitter = ModelFitter(args, model)
 params, loglik = fitter.fit_model(moves)
 ```
 
-### tree_search.py: Modular Implementation
+### tree_search_fitter.py: Specialized Fitters
 
-**Purpose**: Modern, flexible implementation with explicit template-based heuristic construction.
+**Purpose**: Modern, flexible implementation with explicit template-based heuristic construction and optimized fitting engines.
 
 **Key Characteristics**:
-- Accepts custom templates and weights as constructor parameters
+- Accepts modular models (TreeSearch, Myopic) as input
 - Builds heuristics from template definitions via `TreeSearch.create_heuristic()`
-- Processes each trial sequentially to completion
-- Cleaner, more maintainable code structure
+- Supports both **`SingleThreadedFitter`** (sequential) and **`MultiThreadedFitter`** (parallel)
+- Processes each trial sequentially to completion for robust NLL estimation
 
 **Example Usage**:
 ```python
-from tree_search import TreeSearch, SingleThreadedFitter
+from tree_search import TreeSearch
+from tree_search_fitter import MultiThreadedFitter
 
-# Use default templates
+# 1. Initialize modular model
 model = TreeSearch()
 
-# Or define custom templates
-custom_templates = {
-    "4IAR": [[1, 1, 1, 1]],
-    "3IAR": [[0, 1, 1, 1], [1, 1, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1]],
-    "2IAR_CON": [[1, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1]],
-    "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
-}
-custom_weights = {"4IAR": 9.0, "3IAR": 3.5, "2IAR_CON": 1.0, "2IAR_DIS": 0.4}
-model = TreeSearch(templates=custom_templates, initial_weights=custom_weights)
+# 2. Select a fitting engine (e.g. 6 workers)
+fitter = MultiThreadedFitter(model, n_workers=6)
 
-fitter = SingleThreadedFitter(model)
+# 3. Fit to behavioral data
 fitted_params, final_LL = fitter.fit(data)
 ```
 
