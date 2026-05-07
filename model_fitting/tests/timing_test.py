@@ -23,29 +23,49 @@ def generate_dummy_data(n_trials=100):
         })
     return pd.DataFrame(data)
 
-def run_benchmark(n_trials=200):
-    print(f"\n--- Running Benchmark (N={n_trials}) ---")
+def run_benchmark(n_trials=100, worker_counts=[1, 2, 4, 8, 12, 16, 24, 32]):
+    print(f"\n--- Scaling Benchmark (N_trials={n_trials}) ---")
     data = generate_dummy_data(n_trials)
     model = TreeSearch(verbose=False)
     params = [p["initial_value"] for p in model.parameter_list]
     
-    # Warmup
-    fitter = MultiThreadedFitter(model, n_workers=1)
-    fitter.evaluate(params, data)
+    # Speed up search for timing benchmark
+    if "stopping_prob" in model.param_names:
+        idx = model.param_names.index("stopping_prob")
+        params[idx] = 0.5
     
-    # Timing
-    start_time = time.time()
-    fitter.evaluate(params, data)
-    elapsed = time.time() - start_time
+    print(f"{'Workers':<10} | {'Total Time (s)':<15} | {'ms/trial':<12} | {'Speedup':<10}")
+    print("-" * 55)
     
-    ms_per_trial = (elapsed / n_trials) * 1000
-    print(f"✅ Performance: {ms_per_trial:.2f} ms/trial ({elapsed:.4f} s total)")
+    base_time = None
     
-    return ms_per_trial < 100 # Arbitrary threshold for "sanity"
+    for n in worker_counts:
+        # Check if we have enough CPUs
+        if n > os.cpu_count() * 2: 
+            continue
+            
+        fitter = MultiThreadedFitter(model, n_workers=n)
+        
+        # Warmup
+        fitter.evaluate(params, data)
+        
+        start_time = time.time()
+        fitter.evaluate(params, data)
+        elapsed = time.time() - start_time
+        
+        if base_time is None:
+            base_time = elapsed
+            
+        speedup = base_time / elapsed
+        ms_per_trial = (elapsed / n_trials) * 1000
+        
+        print(f"{n:<10} | {elapsed:<15.4f} | {ms_per_trial:<12.2f} | {speedup:<10.2f}x")
+    
+    return True
 
 def main():
     print("=" * 60)
-    print("PERFORMANCE TIMING TESTS")
+    print("PERFORMANCE SCALING TESTS")
     print("=" * 60)
     
     run_benchmark()
