@@ -21,6 +21,7 @@ Instead of hardcoding features in C++, we use a modular system:
 - **`tree_search_fitter.py`**: Provides the execution engines for optimization.
     - `SingleThreadedFitter`: Sequential processing, ideal for debugging.
     - `MultiThreadedFitter`: Parallelized processing using `multiprocessing.Pool`.
+- **`initial_values`**: Models now support an `initial_values` dictionary in their constructor to explicitly set starting parameters for specific feature groups.
 
 ## Common Development Tasks
 
@@ -30,15 +31,16 @@ Instead of hardcoding features in C++, we use a modular system:
 
 ### Debugging Fitting Issues
 - Use `SingleThreadedFitter` to avoid the complexity of multiprocessing during debugging.
-- Check `test/test_treesearch_equivalence.py` to ensure changes haven't broken the functional equivalence with the legacy `model_fit.py` implementation.
+- Check `model_fitting/tests/feature_test.py` to verify heuristic evaluation properties (e.g., `opp_scale` intuition) and `model_fitting/tests/search_test.py` for end-to-end consistency.
 
 ### Adding New Models
 - Subclass `TreeSearch` in `tree_search.py`.
 - Override `set_params` to define how BADS parameters are mapped to the heuristic control vector and feature weights.
 
 ## Testing Standards
-- **NLL Equivalence**: Any change to the fitting logic MUST maintain NLL equivalence with the baseline. Run `pytest model_fitting/tests/test_treesearch_equivalence.py`.
-- **Performance**: Monitor execution time using `python model_fitting/tests/test_timing.py`.
+- **Functional Equivalence**: Any change to the fitting logic MUST maintain equivalence. Run `python model_fitting/tests/search_test.py`.
+- **Heuristic Properties**: Verify that weights and scales are applied correctly using `python model_fitting/tests/feature_test.py`.
+- **Performance**: Monitor execution time using `python model_fitting/tests/timing_test.py`.
 
 ## Directory Map
 - `/`: C++ source and build configuration.

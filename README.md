@@ -117,8 +117,8 @@ python board_explorer.py
 **Run tests:**
 ```bash
 cd model_fitting
-python test/test_feature_generator.py
-python test/test_treesearch_equivalence.py
+python tests/feature_test.py
+python tests/search_test.py
 ```
 
 ## Repository Structure
@@ -177,9 +177,9 @@ python test/test_treesearch_equivalence.py
 
 | Directory/File | Purpose |
 |----------------|---------|
-| `model_fitting/tests/feature_generator_validation.py` | Manual script: modular heuristic vs parameter-vector (run with `python`; not `pytest`) |
-| `model_fitting/tests/test_treesearch_equivalence.py` | `pytest`: IBS NLL equivalence (`SingleThreadedFitter`, `ModelFitter`, `MultiThreadedFitter` n=1) |
-| `model_fitting/tests/test_timing.py` | `pytest`: ST vs MT timing / practical bench (CLI) |
+| `model_fitting/tests/feature_test.py` | Heuristic evaluation properties (weights, `opp_scale` intuition) |
+| `model_fitting/tests/search_test.py` | System-level consistency and search determinism |
+| `model_fitting/tests/timing_test.py` | Performance benchmarks and timing |
 | `test_cpp/*_ut.cpp` | C++ unit tests for corresponding header files |
 
 ### Documentation and Examples
@@ -215,7 +215,7 @@ Both implementations use Inverse Binomial Sampling (IBS) to estimate log-likelih
 | Parallelization | Multiprocessing pool | Single or Multi-threaded engines |
 | **NLL output** | **Identical** | **Identical** |
 
-The test suite (`tests/test_treesearch_equivalence.py`) verifies this by running both implementations on the same data with matched parameters and confirming NLL values match to within ~10⁻⁶ (floating point precision).
+The test suite (`tests/search_test.py`) verifies this by running both implementations on the same data with matched parameters and confirming log-likelihood values match to within floating point precision.
 
 ### model_fit.py: Original Implementation
 
@@ -307,15 +307,14 @@ The `feature_generator.py` module:
 
 The test suite verifies functional equivalence at multiple levels:
 
-**`test/test_feature_generator.py`** — Heuristic equivalence:
-- Modular heuristics produce identical `evaluate()` values as the parameter vector approach
-- Best moves match between implementations (when `feature_drop=0`)
-- Behavior is consistent with and without noise
+**`tests/feature_test.py`** — Heuristic properties and intuition:
+- Modular heuristics produce expected `evaluate()` values based on group weights and `opp_scale`.
+- Verifies that `opp_scale = 0.5` correctly weights the opponent's features at half the value of the current player's.
+- Verifies that `initial_values` are correctly applied during model construction.
 
-**`test/test_treesearch_equivalence.py`** — End-to-end IBS equivalence:
-- Runs both `SingleThreadedFitter` and `ModelFitter` on identical data
-- Verifies NLL values match to ~10⁻⁶ precision across multiple iterations
-- Confirms that architectural differences (sequential vs interleaved processing, single vs multi-threaded) do not affect results
+**`tests/search_test.py`** — End-to-end system consistency:
+- Runs both `SingleThreadedFitter` and `MultiThreadedFitter` on identical data.
+- Verifies search determinism when noise is disabled.
 
 ## Key Features
 
@@ -370,8 +369,8 @@ cd build
 **Python Tests:**
 ```bash
 cd model_fitting
-python test/test_feature_generator.py
-python test/test_treesearch_equivalence.py
+python tests/feature_test.py
+python tests/search_test.py
 ```
 
 ### Code Style
@@ -430,7 +429,7 @@ sys.path.insert(0, '/path/to/ninarow/model_fitting')
 1. Fork the repository
 2. Create a feature branch
 3. Run pre-commit checks: `utils/precommit.sh`
-4. Run tests: `python test/test_feature_generator.py`
+4. Run tests: `python tests/feature_test.py`
 5. Submit a pull request
 
 ## License
