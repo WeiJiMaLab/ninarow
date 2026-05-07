@@ -131,9 +131,11 @@ case $env in
 
     3)
         echo "Setting up for Generic Linux Cluster..."
-        module load cmake 2>/dev/null || echo "⚠️ No cmake module found."
-        module load swig 2>/dev/null || echo "⚠️ No swig module found."
-        module load boost 2>/dev/null || echo "⚠️ No boost module found."
+        # Try specific versions first to avoid "No default version" errors
+        module load cmake/3.30.8 2>/dev/null || module load cmake 2>/dev/null || echo "⚠️ No cmake module found, using system version."
+        module load boost/1.85.0 2>/dev/null || module load boost 2>/dev/null || echo "⚠️ No boost module found, using system version."
+        # swig is usually system-wide
+        module load swig 2>/dev/null || echo "⚠️ No swig module found, using system version."
 
         if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
             source "$HOME/miniconda3/etc/profile.d/conda.sh"
