@@ -6,8 +6,6 @@ try:
 except ImportError:
     pass
 
-
-
 def win_patterns(m=4, n=9, k=4, directions="-/\\|"):
     """Generate all k-in-a-row board positions for given dimensions and directions."""
     patterns = []

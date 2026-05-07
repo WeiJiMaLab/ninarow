@@ -16,7 +16,8 @@ import pandas as pd
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tree_search import TreeSearch, SingleThreadedFitter
+from tree_search import TreeSearch
+from tree_search_fitter import SingleThreadedFitter
 
 
 def load_data(data_folder, n_trials=5):
