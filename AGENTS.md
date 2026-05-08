@@ -47,3 +47,19 @@ Instead of hardcoding features in C++, we use a modular system:
 - `/model_fitting/`: Core Python logic for modeling and optimization.
 - `/model_fitting/tests/`: Comprehensive test suite for verification and benchmarking.
 - `/docs/`: API documentation and design notes.
+
+---
+
+## Change Log
+
+### 2026-05-08: Fitter Performance & Numba Acceleration
+**Author: Antigravity AI**
+
+#### 1. Core Performance Refactor (tree_search_fitter.py)
+- **Numba-Accelerated IBSTracker:** Refactored the IBS accumulation logic into a `jitclass`. This eliminated Python list overhead in the core loop, drastically reducing evaluation latency.
+- **Empirical Noise Reporting:** Updated `optimize` to calculate and print `NLL ± SD`, providing real-time visibility into objective function stability.
+
+#### 2. Optimizer Stabilization
+- **Spatial Termination Strategy:** Implemented `tol_mesh: 1e-3` as the primary stopping criterion in the default fitters.
+- **Two-Stage Warm Start:** Refactored the fitting entry points to support an optional Stage 1 (global search, low repeats) and Stage 2 (local refinement, high repeats) workflow.
+- **Initialization Optimization:** Reduced default `fun_eval_start` to `20` to minimize Sobol-sequence overhead.
