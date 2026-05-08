@@ -9,29 +9,65 @@ from fourbynine import fourbynine_board, fourbynine_pattern
 from multiprocessing import Pool
 
 
+from numba import int32, float64, boolean
+from numba.experimental import jitclass
+
+spec = [
+    ('repeats', int32),
+    ('success_count', int32),
+    ('fail_count', int32),
+    ('current_repeat_nll', float64),
+    ('done', boolean),
+    ('nlls', float64[:]),
+    ('n_recorded', int32),
+]
+
+@jitclass(spec)
 class IBSTracker:
     """
-    A tracker for the Inverse Binomial Sampling (IBS) process, used to monitor 
-    and fit a heuristic to a given dataset by tracking successes and failures.
+    A tracker for the Inverse Binomial Sampling (IBS) process, optimized with Numba.
     """
-    def __init__(self, repeats = 1):
-        """Initialize IBSTracker with experiment factor and success threshold."""
+    def __init__(self, repeats):
         self.repeats = repeats
-        self.success_count, self.fail_count, self.nll, self.done = 0, 0, 0.0, False
+        self.success_count = 0
+        self.fail_count = 0
+        self.current_repeat_nll = 0.0
+        self.done = False
+        self.nlls = np.zeros(repeats, dtype=np.float64)
+        self.n_recorded = 0
 
-    def record(self, is_success:bool):
-        assert not self.done, "Tracker is completed!"
+    def record(self, is_success):
+        if self.done:
+            return
 
         if is_success: 
+            self.nlls[self.n_recorded] = self.current_repeat_nll
+            self.n_recorded += 1
             self.success_count += 1
             self.fail_count = 0
-            if self.success_count == self.repeats: self.done = True
+            self.current_repeat_nll = 0.0
+            if self.success_count == self.repeats: 
+                self.done = True
         else: 
             self.fail_count += 1
-            self.nll += (1 / self.repeats) * (1 / self.fail_count)
+            self.current_repeat_nll += 1.0 / self.fail_count
     
-    def __repr__(self):
-        return f"Successes: {self.success_count}, Failures: {self.fail_count}, Negative Log-likelihood: {self.nll}"
+    @property
+    def nll(self):
+        """Returns the mean Negative Log-Likelihood across all repeats."""
+        if self.n_recorded == 0:
+            return 0.0
+        # Manual mean for jitclass compatibility if needed, 
+        # though np.mean works on slices.
+        return np.mean(self.nlls[:self.n_recorded])
+
+    @property
+    def variance_of_mean(self):
+        """Returns the variance of the NLL mean estimator."""
+        if self.n_recorded < 2:
+            return 0.0
+        # Sample variance / n
+        return np.var(self.nlls[:self.n_recorded]) * self.n_recorded / (self.n_recorded - 1) / self.repeats
 
 
 class SingleThreadedFitter:
@@ -61,7 +97,7 @@ class SingleThreadedFitter:
         actual_move = int(trial.move).bit_length() - 1
         while not tracker.done:
             tracker.record(self.model.predict(board) == actual_move)
-        return tracker.nll
+        return tracker.nll, tracker.variance_of_mean
 
     def get_random_order(self, n):
         """Generate a random permutation of indices [0, n) using the same method as original."""
@@ -83,36 +119,46 @@ class SingleThreadedFitter:
         shuffled_trials = [data.iloc[i] for i in random_order]
 
         shuffled_results = []
+        shuffled_variances = []
         for trial in shuffled_trials: 
-            nll_trial = self.process_single_trial(trial)
+            nll_trial, var_trial = self.process_single_trial(trial)
             shuffled_results.append(nll_trial)
+            shuffled_variances.append(var_trial)
         
         shuffled_results = np.array(shuffled_results, dtype=np.float32)
+        shuffled_variances = np.array(shuffled_variances, dtype=np.float32)
+        
         results = np.empty(n_trials, dtype=np.float32)
+        variances = np.empty(n_trials, dtype=np.float32)
+        
         results[random_order] = shuffled_results
-        return results
+        variances[random_order] = shuffled_variances
+        
+        return results, variances
     
     def optimize(self, x):
         """Optimization function for BADS."""    
         self.time = time()
-        nlls = self.evaluate(x, self.data).sum()
+        nlls_arr, vars_arr = self.evaluate(x, self.data)
+        nlls = nlls_arr.sum()
+        total_std = np.sqrt(vars_arr.sum())
+
         if self.verbose: 
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL (n_repeats={self.repeats}): {nlls:.5g}\t "
+                  f"NLL: {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {[np.round(x_, 3) for x_ in x]}")
                   
         self.iteration_count += 1
-        return nlls
+        return nlls.item(), total_std.item()
     
     def fit(self, 
             data: pd.DataFrame, 
             manual_seed=None, 
             bads_options={
                             'uncertainty_handling': True,
-                            'noise_final_samples': 0,
-                            'max_fun_evals': 1000,
+                            'display': 'iter',
                         }):
         """Fit the model to data using BADS optimization."""
         self.time = time()
@@ -125,7 +171,7 @@ class SingleThreadedFitter:
         print(f"\t[Fitted Parameters]\t {fitted_params}")
         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
 
-        final_LL = self.evaluate(fitted_params, self.data)
+        final_LL, _ = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
 
 
@@ -142,6 +188,7 @@ def _process_chunk(args):
     _worker_model.heuristic.seed_generator(heuristic_seed)
 
     results = []
+    variances = []
     for black, white, move in chunk:
         tracker = IBSTracker(repeats=repeats)
         board = fourbynine_board(fourbynine_pattern(black), fourbynine_pattern(white))
@@ -149,7 +196,8 @@ def _process_chunk(args):
         while not tracker.done:
             tracker.record(_worker_model.predict(board) == actual_move)
         results.append(tracker.nll)
-    return results
+        variances.append(tracker.variance_of_mean)
+    return results, variances
 
 
 class MultiThreadedFitter:
@@ -239,26 +287,35 @@ class MultiThreadedFitter:
         chunk_results = self._get_pool().map(_process_chunk, chunk_args)
 
         shuffled_results = np.empty(n_trials, dtype=np.float32)
-        for i, chunk_result in enumerate(chunk_results):
+        shuffled_variances = np.empty(n_trials, dtype=np.float32)
+        for i, (chunk_result, chunk_variance) in enumerate(chunk_results):
             shuffled_results[i::n_workers] = chunk_result
+            shuffled_variances[i::n_workers] = chunk_variance
+        
         results = np.empty(n_trials, dtype=np.float32)
+        variances = np.empty(n_trials, dtype=np.float32)
+        
         results[random_order] = shuffled_results
-        return results
+        variances[random_order] = shuffled_variances
+        return results, variances
 
     def optimize(self, x):
         """Optimization function for BADS."""    
         self.time = time()
-        nlls = self.evaluate(x, self.data).sum()
+        nlls_arr, vars_arr = self.evaluate(x, self.data)
+        nlls = nlls_arr.sum()
+        total_std = np.sqrt(vars_arr.sum())
+
         if self.verbose: 
             param_print = {param_name: np.round(x_, 3).item() for param_name, x_ in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL (n_repeats={self.repeats}): {nlls:.5g}\t "
+                  f"NLL: {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {param_print}")
                   
         self.iteration_count += 1
-        return nlls
+        return nlls.item(), total_std.item()
 
     def print_params(self, x, lower_bound, upper_bound, plausible_lower_bound, plausible_upper_bound):
         header = f"{'Parameter':>20} :\t{'lo'}\t{'plo'}\t{'x0'}\t{'phi'}\t{'hi'}"
@@ -273,8 +330,7 @@ class MultiThreadedFitter:
             manual_seed=None, 
             bads_options={
                             'uncertainty_handling': True,
-                            'noise_final_samples': 0,
-                            'tol_fun': 1e-2,
+                            'display': 'iter',
                         }):
         """
         Fit the model to data using BADS optimization.
@@ -285,29 +341,40 @@ class MultiThreadedFitter:
         self.time = time()
         self.__class__.check_dataframe(data)
         self.data = data
-
+        
+        print(f"\n[BADS Optimization Start]")
+        print(f"  Options: {bads_options}")
+        
         self.repeats, self.iteration_count = self.start_repeats, 0
-
         self.print_params(self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound)
+        
+        # --- STAGE 1: WARM START (Global Search, repeats=5) ---
+        print("\n>>> STAGE 1: WARM START (Global Search, repeats=5)")
+        warm_start_evals = max(25 * len(self.model.initial_params), 21)
         warm_start_bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, 
-                options={**bads_options, 'max_fun_evals': 200})
+                options={**bads_options, 'max_fun_evals': warm_start_evals})
 
         warm_start_params = warm_start_bads.optimize()['x']
+        
+        # Shrink plausible bounds around warm start result
         width = self.model.plausible_upper_bound - self.model.plausible_lower_bound
         warm_plb = np.maximum(self.model.lower_bound, warm_start_params - 0.25 * width)
         warm_pub = np.minimum(self.model.upper_bound, warm_start_params + 0.25 * width)
 
+        # --- STAGE 2: FULL FIT (High precision, narrow bounds) ---
+        print("\n>>> STAGE 2: FULL FIT (Local Search, repeats=50)")
         self.repeats, self.iteration_count = self.full_repeats, 0
         self.print_params(warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub)
+        
         bads = BADS(self.optimize, warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub, 
-                options={**bads_options, 'max_fun_evals': 1000})
+                options=bads_options)
 
         fitted_params = bads.optimize()['x']
 
         print(f"\t[Fitted Parameters]\t {fitted_params}")
         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
 
-        final_LL = self.evaluate(fitted_params, self.data)
+        final_LL, _ = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
     
     @staticmethod
