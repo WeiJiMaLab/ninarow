@@ -147,7 +147,7 @@ class SingleThreadedFitter:
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL: {nlls:.5g} ± {total_std:.3g}\t "
+                  f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {[np.round(x_, 3) for x_ in x]}")
                   
         self.iteration_count += 1
@@ -212,7 +212,7 @@ class MultiThreadedFitter:
         self.time = time()
         self.repeats = n_repeats
         self.start_repeats = 5
-        self.full_repeats = 50
+        self.full_repeats = n_repeats
         self.last_seed = None
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
@@ -311,7 +311,7 @@ class MultiThreadedFitter:
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL: {nlls:.5g} ± {total_std:.3g}\t "
+                  f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {param_print}")
                   
         self.iteration_count += 1
@@ -362,7 +362,7 @@ class MultiThreadedFitter:
         warm_pub = np.minimum(self.model.upper_bound, warm_start_params + 0.25 * width)
 
         # --- STAGE 2: FULL FIT (High precision, narrow bounds) ---
-        print("\n>>> STAGE 2: FULL FIT (Local Search, repeats=50)")
+        print(f"\n>>> STAGE 2: FULL FIT (Local Search, repeats={self.full_repeats})")
         self.repeats, self.iteration_count = self.full_repeats, 0
         self.print_params(warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub)
         
