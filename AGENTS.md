@@ -32,6 +32,7 @@ Instead of hardcoding features in C++, we use a modular system:
 ### Debugging Fitting Issues
 - Use `SingleThreadedFitter` to avoid the complexity of multiprocessing during debugging.
 - Check `model_fitting/tests/feature_test.py` to verify heuristic evaluation properties (e.g., `opp_scale` intuition) and `model_fitting/tests/search_test.py` for end-to-end consistency.
+- **BADS tolerance smoke:** `python -m logistic_smoke` only when needed; one pytest in `test_bads_logistic_tolerance.py`. Production IBS: `tol_fun` tight, stop on `tol_mesh`.
 
 ### Adding New Models
 - Subclass `TreeSearch` in `tree_search.py`.
@@ -42,6 +43,15 @@ Instead of hardcoding features in C++, we use a modular system:
 - **Heuristic Properties**: Verify that weights and scales are applied correctly using `python model_fitting/tests/feature_test.py`.
 - **Performance**: Monitor execution time using `python model_fitting/tests/timing_test.py`.
 
+### Smoke tests (agents)
+A **smoke test must finish in ~1–2 minutes**. If it runs longer, stop — you are not running a smoke test.
+
+- **Do not** run `pytest tests/test_bads_logistic_tolerance.py` in bulk agent loops, multi-fold CV grids, or `--benchmark` unless the user explicitly asks.
+- **Do not** chain smoke + full pytest + benchmark in one session (memory and wall time).
+- Default: `python -m logistic_smoke` — one tiny split, five settings, `SMOKE_MAX_FUN_EVALS=60` (sanity only; production fits use 2000 evals).
+- Report existing smoke output when present; do not re-run to “confirm”.
+- Production fitter BADS: `tol_mesh=1e-3`, `tol_fun=1e-7`. Fair logistic baseline (for later): **scipy** `ftol=gtol=1e-6` (prefer over sklearn on this toy setup).
+
 ## Directory Map
 - `/`: C++ source and build configuration.
 - `/model_fitting/`: Core Python logic for modeling and optimization.
@@ -51,6 +61,11 @@ Instead of hardcoding features in C++, we use a modular system:
 ---
 
 ## Change Log
+
+### 2026-05-25: BADS tolerance smoke test (logistic proxy)
+- Added `model_fitting/logistic_smoke.py` and `tests/test_bads_logistic_tolerance.py` (one fast pytest).
+- Default CLI: one tiny split, capped BADS evals; `--benchmark` is slow and not for agents.
+- Documented production tols (`tol_mesh=1e-3`, `tol_fun=1e-7`) vs scipy `ftol=gtol≈1e-6` on smooth logistic NLL. See `model_fitting/NOTES_bads_tolerance.md`.
 
 ### 2026-05-08: Fitter Performance & Numba Acceleration
 **Author: Antigravity AI**

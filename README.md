@@ -180,6 +180,8 @@ python tests/search_test.py
 | `model_fitting/tests/feature_test.py` | Heuristic evaluation properties (weights, `opp_scale` intuition) |
 | `model_fitting/tests/search_test.py` | System-level consistency and search determinism |
 | `model_fitting/tests/timing_test.py` | Performance benchmarks and timing |
+| `model_fitting/logistic_smoke.py` | Fast PyBADS vs scipy tolerance check on tiny logistic NLL (not TreeSearch/IBS) |
+| `model_fitting/tests/test_bads_logistic_tolerance.py` | Single-split pytest sanity check (optional; see smoke notes below) |
 | `test_cpp/*_ut.cpp` | C++ unit tests for corresponding header files |
 
 ### Documentation and Examples
@@ -372,6 +374,17 @@ cd model_fitting
 python tests/feature_test.py
 python tests/search_test.py
 ```
+
+**BADS tolerance smoke** (tiny logistic NLL; target ~1–2 minutes — not a full fit benchmark):
+
+```bash
+cd model_fitting
+python -m logistic_smoke
+```
+
+Compares production PyBADS stops (`tol_mesh=1e-3`, `tol_fun=1e-7`) to scipy on synthetic data. Use this to sanity-check optimizer settings before long IBS/TreeSearch jobs. Optional slow grid: `python -m logistic_smoke --benchmark`. See `model_fitting/NOTES_bads_tolerance.md` and `AGENTS.md` (Smoke tests).
+
+Production IBS fitting should stop primarily on **`tol_mesh`**, with **`tol_fun`** tight so noisy NLL plateaus do not terminate early. A fair deterministic logistic baseline (for separate comparison work) is scipy L-BFGS-B with `ftol=gtol≈1e-6`.
 
 ### Code Style
 
