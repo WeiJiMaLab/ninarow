@@ -1,4 +1,5 @@
 from tree_search import TreeSearch
+import json
 import os
 import random
 import numpy as np
@@ -40,25 +41,23 @@ class IBSTracker:
         if self.done:
             return
 
-        if is_success: 
+        if is_success:
             self.nlls[self.n_recorded] = self.current_repeat_nll
             self.n_recorded += 1
             self.success_count += 1
             self.fail_count = 0
             self.current_repeat_nll = 0.0
-            if self.success_count == self.repeats: 
+            if self.success_count == self.repeats:
                 self.done = True
-        else: 
+        else:
             self.fail_count += 1
             self.current_repeat_nll += 1.0 / self.fail_count
-    
+
     @property
     def nll(self):
         """Returns the mean Negative Log-Likelihood across all repeats."""
         if self.n_recorded == 0:
             return 0.0
-        # Manual mean for jitclass compatibility if needed, 
-        # though np.mean works on slices.
         return np.mean(self.nlls[:self.n_recorded])
 
     @property
@@ -66,7 +65,6 @@ class IBSTracker:
         """Returns the variance of the NLL mean estimator."""
         if self.n_recorded < 2:
             return 0.0
-        # Sample variance / n
         return np.var(self.nlls[:self.n_recorded]) * self.n_recorded / (self.n_recorded - 1) / self.repeats
 
 
@@ -120,47 +118,46 @@ class SingleThreadedFitter:
 
         shuffled_results = []
         shuffled_variances = []
-        for trial in shuffled_trials: 
+        for trial in shuffled_trials:
             nll_trial, var_trial = self.process_single_trial(trial)
             shuffled_results.append(nll_trial)
             shuffled_variances.append(var_trial)
-        
+
         shuffled_results = np.array(shuffled_results, dtype=np.float32)
         shuffled_variances = np.array(shuffled_variances, dtype=np.float32)
-        
+
         results = np.empty(n_trials, dtype=np.float32)
         variances = np.empty(n_trials, dtype=np.float32)
-        
+
         results[random_order] = shuffled_results
         variances[random_order] = shuffled_variances
-        
+
         return results, variances
-    
+
     def optimize(self, x):
-        """Optimization function for BADS."""    
+        """Optimization function for BADS."""
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
         total_std = np.sqrt(vars_arr.sum())
 
-        if self.verbose: 
+        if self.verbose:
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
                   f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {[np.round(x_, 3) for x_ in x]}")
-                  
+
         self.iteration_count += 1
         return nlls.item(), total_std.item()
-    
-    def fit(self, 
-            data: pd.DataFrame, 
-            manual_seed=None, 
-            bads_options={
-                            'uncertainty_handling': True,
-                            'display': 'iter',
-                        }):
+
+    def fit(self,
+            data: pd.DataFrame,
+            manual_seed=None,
+            bads_options=None):
         """Fit the model to data using BADS optimization."""
+        if bads_options is None:
+            bads_options = {'uncertainty_handling': True, 'display': 'iter'}
         self.time = time()
         MultiThreadedFitter.check_dataframe(data)
         self.data = data
@@ -200,32 +197,58 @@ def _process_chunk(args):
     return results, variances
 
 
+def _dynamic_repeats(effective_iter, max_repeats):
+    """Linearly ramp repeats from 5 to max_repeats over polls 5–19; hold at extremes."""
+    if effective_iter < 5:
+        return 5
+    if effective_iter >= 20:
+        return max_repeats
+    return round(5 + (effective_iter - 5) * (max_repeats - 5) / (20 - 5))
+
+
 class MultiThreadedFitter:
     """
     Parallelized fitter using multiprocessing Pool.
     With n_workers=1, produces bit-for-bit identical results to SingleThreadedFitter.
+
+    Runs a single-stage BADS optimization over the original, constant plausible bounds.
+    IBS repeats are scaled dynamically from 5 (global search) to n_repeats (final
+    refinement) based on the BADS poll iteration, eliminating coordinate-system
+    variance from bound shifting.
+
+    Pass checkpoint_path to fit() to enable fault-tolerant resume: the best parameters,
+    poll iteration, and u-space mesh size are written to a JSON file on each improvement.
+    If the file exists at the start of fit(), the run resumes from that checkpoint with
+    adaptive bounds and a matching tol_mesh so the physical stopping resolution is
+    identical to a fresh run.
     """
-    def __init__(self, model: TreeSearch, verbose=False, n_repeats = 50, n_workers=-1):
+    def __init__(self, model: TreeSearch, verbose=False, n_repeats=50, n_workers=-1):
         self.model = model
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.repeats = n_repeats
-        self.start_repeats = 5
-        self.full_repeats = n_repeats
+        self.repeats = 5
+        self._max_repeats = n_repeats
         self.last_seed = None
         self.n_workers = n_workers if n_workers > 0 else os.cpu_count()
         self._pool = None
+        self._current_bads = None
+        self._checkpoint_iter = 0
+        self._checkpoint_path = None
+        self._best_nll = np.inf
+        self._best_params = None
 
     def __getstate__(self):
-        """Exclude live Pool from pickle/deepcopy (e.g. pybads OptimizeResult)."""
+        """Exclude live Pool and active BADS reference from pickle."""
         state = self.__dict__.copy()
         state["_pool"] = None
+        state["_current_bads"] = None
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._pool = None
+        self._current_bads = None
 
     def get_random_order(self, n):
         """Generate a random permutation of indices [0, n) using the same method as original."""
@@ -291,29 +314,45 @@ class MultiThreadedFitter:
         for i, (chunk_result, chunk_variance) in enumerate(chunk_results):
             shuffled_results[i::n_workers] = chunk_result
             shuffled_variances[i::n_workers] = chunk_variance
-        
+
         results = np.empty(n_trials, dtype=np.float32)
         variances = np.empty(n_trials, dtype=np.float32)
-        
+
         results[random_order] = shuffled_results
         variances[random_order] = shuffled_variances
         return results, variances
 
     def optimize(self, x):
-        """Optimization function for BADS."""    
+        """Optimization function for BADS."""
+        # Dynamic repeats: ramp from 5 (global) to _max_repeats (refinement)
+        if self._current_bads is not None:
+            effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
+            self.repeats = _dynamic_repeats(effective_iter, self._max_repeats)
+
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
         total_std = np.sqrt(vars_arr.sum())
 
-        if self.verbose: 
-            param_print = {param_name: np.round(x_, 3).item() for param_name, x_ in zip(self.model.param_names, x)}
+        if self._checkpoint_path and self._current_bads is not None and nlls < self._best_nll:
+            self._best_nll = float(nlls)
+            self._best_params = x.copy()
+            checkpoint = {
+                "best_params": self._best_params.tolist(),
+                "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
+                "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
+            }
+            with open(self._checkpoint_path, "w") as f:
+                json.dump(checkpoint, f)
+
+        if self.verbose:
+            param_print = {name: np.round(v, 3).item() for name, v in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
                   f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
                   f"Params: {param_print}")
-                  
+
         self.iteration_count += 1
         return nlls.item(), total_std.item()
 
@@ -324,61 +363,93 @@ class MultiThreadedFitter:
             self.model.param_names, x, lower_bound, upper_bound, plausible_lower_bound, plausible_upper_bound
         ):
             print(f"{param_name:>20}:\t{lo:.3f}\t{plo:.3f}\t{x_:.3f}\t{phi:.3f}\t{hi:.3f}")
-            
-    def fit(self, 
-            data: pd.DataFrame, 
-            manual_seed=None, 
-            bads_options={
-                            'uncertainty_handling': True,
-                            'display': 'iter',
-                        }):
+
+    def fit(self,
+            data: pd.DataFrame,
+            manual_seed=None,
+            bads_options=None,
+            checkpoint_path=None):
         """
-        Fit the model to data using BADS optimization.
-        
-        Returns:
-            tuple: (optimized_params, final_nll)
+        Fit the model to data using a single-stage BADS optimization.
+
+        If checkpoint_path points to an existing JSON file, resumes from the
+        saved state with adaptively narrowed plausible bounds and a scaled
+        tol_mesh that guarantees the same physical stopping resolution as a
+        fresh run.
         """
+        if bads_options is None:
+            bads_options = {'uncertainty_handling': True, 'display': 'iter'}
+
         self.time = time()
         self.__class__.check_dataframe(data)
         self.data = data
-        
+        self._checkpoint_path = checkpoint_path
+        self._best_nll = np.inf
+        self._best_params = None
+        self.repeats = 5
+        self.iteration_count = 0
+
+        lb = self.model.lower_bound
+        ub = self.model.upper_bound
+        orig_plb = self.model.plausible_lower_bound
+        orig_pub = self.model.plausible_upper_bound
+        active_options = dict(bads_options)
+
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            with open(checkpoint_path) as f:
+                ckpt = json.load(f)
+
+            x0 = np.array(ckpt["best_params"])
+            self._checkpoint_iter = int(ckpt["poll_iter"])
+            narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
+
+            gamma_orig = (orig_pub - orig_plb) / 2
+            buffer = 1e-3 * gamma_orig
+
+            plb = x0 - narrowing_factor * gamma_orig
+            pub = x0 + narrowing_factor * gamma_orig
+
+            # Rigid-body shift: fix lower overflow, then upper overflow.
+            lo_shift = np.maximum(0.0, lb + buffer - plb)
+            plb += lo_shift
+            pub += lo_shift
+            hi_shift = np.maximum(0.0, pub - (ub - buffer))
+            plb -= hi_shift
+            pub -= hi_shift
+
+            active_options["tol_mesh"] = 1e-3 / narrowing_factor
+
+            print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
+                  f"mesh_size={ckpt['mesh_size']:.4f}, narrowing_factor={narrowing_factor:.4f}]")
+            print(f"  x0: {np.round(x0, 4)}")
+            print(f"  tol_mesh_resume: {active_options['tol_mesh']:.4g}")
+        else:
+            x0 = self.model.initial_params
+            plb = orig_plb
+            pub = orig_pub
+            self._checkpoint_iter = 0
+
         print(f"\n[BADS Optimization Start]")
-        print(f"  Options: {bads_options}")
-        
-        self.repeats, self.iteration_count = self.start_repeats, 0
-        self.print_params(self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound)
-        
-        # --- STAGE 1: WARM START (Global Search, repeats=5) ---
-        print("\n>>> STAGE 1: WARM START (Global Search, repeats=5)")
-        warm_start_evals = max(25 * len(self.model.initial_params), 21)
-        warm_start_bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, 
-                options={**bads_options, 'max_fun_evals': warm_start_evals})
+        print(f"  Options: {active_options}")
+        self.print_params(x0, lb, ub, plb, pub)
 
-        warm_start_params = warm_start_bads.optimize()['x']
-        
-        # Shrink plausible bounds around warm start result
-        width = self.model.plausible_upper_bound - self.model.plausible_lower_bound
-        warm_plb = np.maximum(self.model.lower_bound, warm_start_params - 0.25 * width)
-        warm_pub = np.minimum(self.model.upper_bound, warm_start_params + 0.25 * width)
+        bads = BADS(self.optimize, x0, lb, ub, plb, pub, options=active_options)
+        self._current_bads = bads
+        try:
+            result = bads.optimize()
+        finally:
+            self._current_bads = None
 
-        # --- STAGE 2: FULL FIT (High precision, narrow bounds) ---
-        print(f"\n>>> STAGE 2: FULL FIT (Local Search, repeats={self.full_repeats})")
-        self.repeats, self.iteration_count = self.full_repeats, 0
-        self.print_params(warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub)
-        
-        bads = BADS(self.optimize, warm_start_params, self.model.lower_bound, self.model.upper_bound, warm_plb, warm_pub, 
-                options=bads_options)
-
-        fitted_params = bads.optimize()['x']
-
+        fitted_params = result['x']
         print(f"\t[Fitted Parameters]\t {fitted_params}")
         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
 
+        self.repeats = self._max_repeats
         final_LL, _ = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
-    
+
     @staticmethod
-    def check_dataframe(data): 
+    def check_dataframe(data):
         """Check that the data is in the correct format for fitting."""
         assert isinstance(data, pd.DataFrame), "Data must be a pandas DataFrame."
         assert 'black' in data.columns, "Data must have a 'black' column."
