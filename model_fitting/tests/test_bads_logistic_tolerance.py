@@ -74,3 +74,9 @@ def test_production_bads_and_scipy_baseline_finite():
     assert np.all(np.isfinite(scipy_fit.beta))
     assert np.isfinite(logistic_nll(bads.beta, X_train, y_train))
     assert np.linalg.norm(scipy_fit.beta - ref.beta) < 0.1
+
+    # Verify BADS internal termination tolerances
+    if "maximum number of function evaluations" not in bads.stop_reason.lower():
+        assert bads.mesh_size is not None
+        # PyBADS terminates via mesh when mesh_size <= tol_mesh
+        assert bads.mesh_size <= PRODUCTION_TOL_MESH * 1.01, f"Mesh size {bads.mesh_size} failed to reach {PRODUCTION_TOL_MESH}"
