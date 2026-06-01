@@ -337,10 +337,15 @@ class MultiThreadedFitter:
         if self._checkpoint_path and self._current_bads is not None and nlls < self._best_nll:
             self._best_nll = float(nlls)
             self._best_params = x.copy()
+            effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
+            self._poll_iter_history.append(int(effective_iter))
+            self._nll_history.append(self._best_nll)
             checkpoint = {
                 "best_params": self._best_params.tolist(),
                 "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
                 "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
+                "poll_iter_history": self._poll_iter_history,
+                "nll_history": self._nll_history,
             }
             with open(self._checkpoint_path, "w") as f:
                 json.dump(checkpoint, f)
@@ -369,8 +374,8 @@ class MultiThreadedFitter:
             manual_seed=None,
             bads_options=None,
             checkpoint_path=None,
-            atol_mesh=0.01,
-            atol_fun=0.1):
+            atol_mesh=1e-3,
+            atol_fun=1e-7):
         """
         Fit the model to data using a single-stage BADS optimization.
 
@@ -388,6 +393,8 @@ class MultiThreadedFitter:
         self._checkpoint_path = checkpoint_path
         self._best_nll = np.inf
         self._best_params = None
+        self._nll_history = []
+        self._poll_iter_history = []
         self.repeats = 5
         self.iteration_count = 0
 
@@ -402,33 +409,46 @@ class MultiThreadedFitter:
         active_options['tol_fun'] = atol_fun
 
         if checkpoint_path and os.path.exists(checkpoint_path):
-            with open(checkpoint_path) as f:
-                ckpt = json.load(f)
+            try:
+                with open(checkpoint_path) as f:
+                    ckpt = json.load(f)
 
-            x0 = np.array(ckpt["best_params"])
-            self._checkpoint_iter = int(ckpt["poll_iter"])
-            narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
+                if "best_params" not in ckpt or "poll_iter" not in ckpt or "mesh_size" not in ckpt:
+                    raise ValueError("Missing essential keys in checkpoint JSON.")
 
-            gamma_orig = (orig_pub - orig_plb) / 2
-            buffer = 1e-3 * gamma_orig
+                x0 = np.array(ckpt["best_params"])
+                self._checkpoint_iter = int(ckpt["poll_iter"])
+                self._nll_history = ckpt.get("nll_history", [])
+                self._poll_iter_history = ckpt.get("poll_iter_history", [])
+                narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
 
-            plb = x0 - narrowing_factor * gamma_orig
-            pub = x0 + narrowing_factor * gamma_orig
+                gamma_orig = (orig_pub - orig_plb) / 2
+                buffer = 1e-3 * gamma_orig
 
-            # Rigid-body shift: fix lower overflow, then upper overflow.
-            lo_shift = np.maximum(0.0, lb + buffer - plb)
-            plb += lo_shift
-            pub += lo_shift
-            hi_shift = np.maximum(0.0, pub - (ub - buffer))
-            plb -= hi_shift
-            pub -= hi_shift
+                plb = x0 - narrowing_factor * gamma_orig
+                pub = x0 + narrowing_factor * gamma_orig
 
-            active_options["tol_mesh"] /= narrowing_factor
+                # Rigid-body shift: fix lower overflow, then upper overflow.
+                lo_shift = np.maximum(0.0, lb + buffer - plb)
+                plb += lo_shift
+                pub += lo_shift
+                hi_shift = np.maximum(0.0, pub - (ub - buffer))
+                plb -= hi_shift
+                pub -= hi_shift
 
-            print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
-                  f"mesh_size={ckpt['mesh_size']:.4f}, narrowing_factor={narrowing_factor:.4f}]")
-            print(f"  x0: {np.round(x0, 4)}")
-            print(f"  tol_mesh_resume: {active_options['tol_mesh']:.4g}")
+                active_options["tol_mesh"] /= narrowing_factor
+
+                print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
+                      f"mesh_size={ckpt['mesh_size']:.4f}, narrowing_factor={narrowing_factor:.4f}]")
+                print(f"  x0: {np.round(x0, 4)}")
+                print(f"  tol_mesh_resume: {active_options['tol_mesh']:.4g}")
+            except Exception as e:
+                print(f"\n[Warning] Failed to load checkpoint {checkpoint_path}: {e}")
+                print("Falling back to scratch initialization...")
+                x0 = self.model.initial_params
+                plb = orig_plb
+                pub = orig_pub
+                self._checkpoint_iter = 0
         else:
             x0 = self.model.initial_params
             plb = orig_plb
