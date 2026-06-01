@@ -40,10 +40,10 @@ def test_fitter_reproducibility():
     fitter = SingleThreadedFitter(model, n_repeats=10)
     
     random.seed(42)
-    ll1 = fitter.evaluate(params, data).sum()
+    ll1 = fitter.evaluate(params, data)[0].sum()
     
     random.seed(42)
-    ll2 = fitter.evaluate(params, data).sum()
+    ll2 = fitter.evaluate(params, data)[0].sum()
     
     match = abs(ll1 - ll2) < 1e-10
     status = "✅ PASS" if match else "❌ FAIL"
