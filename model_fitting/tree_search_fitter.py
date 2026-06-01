@@ -368,7 +368,9 @@ class MultiThreadedFitter:
             data: pd.DataFrame,
             manual_seed=None,
             bads_options=None,
-            checkpoint_path=None):
+            checkpoint_path=None,
+            atol_mesh=0.01,
+            atol_fun=0.1):
         """
         Fit the model to data using a single-stage BADS optimization.
 
@@ -395,6 +397,10 @@ class MultiThreadedFitter:
         orig_pub = self.model.plausible_upper_bound
         active_options = dict(bads_options)
 
+        gamma_orig = (orig_pub - orig_plb) / 2
+        active_options['tol_mesh'] = atol_mesh / np.mean(gamma_orig)
+        active_options['tol_fun'] = atol_fun
+
         if checkpoint_path and os.path.exists(checkpoint_path):
             with open(checkpoint_path) as f:
                 ckpt = json.load(f)
@@ -417,7 +423,7 @@ class MultiThreadedFitter:
             plb -= hi_shift
             pub -= hi_shift
 
-            active_options["tol_mesh"] = 1e-3 / narrowing_factor
+            active_options["tol_mesh"] /= narrowing_factor
 
             print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
                   f"mesh_size={ckpt['mesh_size']:.4f}, narrowing_factor={narrowing_factor:.4f}]")
