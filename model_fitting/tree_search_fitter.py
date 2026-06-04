@@ -70,27 +70,55 @@ class IBSTracker:
 
 class SingleThreadedFitter:
     """
-    The main class for finding the best heuristic/search parameter
-    fit for a given dataset using sequential processing.
+    Sequential fitter with the same checkpoint/ramp/tolerance machinery as
+    MultiThreadedFitter.  Useful for debugging, profiling, and as a baseline.
+
+    With n_workers=1 MultiThreadedFitter produces bit-for-bit identical results;
+    SingleThreadedFitter is kept as a simpler, dependency-free reference.
+
+    New features vs the original:
+    - Dynamic IBS repeats: ramp from REPEAT_MIN (5) to n_repeats over BADS poll
+      iterations REPEAT_RAMP_START_POLL..REPEAT_RAMP_END_POLL (same schedule as
+      MultiThreadedFitter).
+    - Checkpoint & resume: compatible JSON format with MultiThreadedFitter so the
+      two fitters can hand off to each other.
+    - atol_mesh / atol_fun: same physical-space stopping criteria.
+    - nll_budget: optional per-evaluation early-exit tripwire.  If the running NLL
+      sum exceeds nll_budget before all trials are processed, the evaluation returns
+      immediately with the partial sum.  Pass nll_budget=None to disable (default).
     """
+
     def __init__(self, model: TreeSearch, n_repeats=50, verbose=False):
-        """
-        Args:
-            model: The model this fitter should use.
-            verbose: Print extra debugging info.
-        """
         self.model = model
         self.verbose = verbose
         self.iteration_count = 0
         self.time = time()
-        self.repeats = n_repeats
+        self.repeats = REPEAT_MIN
+        self._max_repeats = n_repeats
         self.last_seed = None
-        # Link back to fitter so set_params can store seed
+        self._current_bads = None
+        self._checkpoint_iter = 0
+        self._checkpoint_path = None
+        self._best_nll = np.inf
+        self._best_params = None
+        self._nll_history = []
+        self._poll_iter_history = []
+        self.nll_budget = None
         self.model._fitter = self
 
+    def __getstate__(self):
+        """Exclude live BADS reference from pickle/deepcopy (avoids circular refs)."""
+        state = self.__dict__.copy()
+        state["_current_bads"] = None
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._current_bads = None
+
     def process_single_trial(self, trial):
-        """Process a single trial to completion. Model must be set up before calling."""
-        tracker = IBSTracker(repeats = self.repeats)
+        """Process a single trial. Model must be set_params'd before calling."""
+        tracker = IBSTracker(repeats=self.repeats)
         board = fourbynine_board(fourbynine_pattern(int(trial.black)), fourbynine_pattern(int(trial.white)))
         actual_move = int(trial.move).bit_length() - 1
         while not tracker.done:
@@ -98,7 +126,6 @@ class SingleThreadedFitter:
         return tracker.nll, tracker.variance_of_mean
 
     def get_random_order(self, n):
-        """Generate a random permutation of indices [0, n) using the same method as original."""
         indices = list(range(n))
         random_order = []
         while indices:
@@ -109,44 +136,71 @@ class SingleThreadedFitter:
 
     def evaluate(self, params, data: pd.DataFrame):
         """
-        Evaluate the log-likelihood of the given parameters on the given data.
+        Evaluate NLL sequentially.  Respects self.nll_budget: if the running NLL
+        sum exceeds the budget mid-evaluation, returns early with the partial total
+        broadcast across all trials (biased but directionally correct for BADS).
         """
         self.model.set_params(params)
         n_trials = len(data)
         random_order = self.get_random_order(n_trials)
-        shuffled_trials = [data.iloc[i] for i in random_order]
 
-        shuffled_results = []
-        shuffled_variances = []
-        for trial in shuffled_trials:
+        results = np.zeros(n_trials, dtype=np.float32)
+        variances = np.zeros(n_trials, dtype=np.float32)
+        running_nll = 0.0
+
+        for pos, orig_idx in enumerate(random_order):
+            trial = data.iloc[orig_idx]
             nll_trial, var_trial = self.process_single_trial(trial)
-            shuffled_results.append(nll_trial)
-            shuffled_variances.append(var_trial)
+            results[orig_idx] = nll_trial
+            variances[orig_idx] = var_trial
+            running_nll += nll_trial
 
-        shuffled_results = np.array(shuffled_results, dtype=np.float32)
-        shuffled_variances = np.array(shuffled_variances, dtype=np.float32)
-
-        results = np.empty(n_trials, dtype=np.float32)
-        variances = np.empty(n_trials, dtype=np.float32)
-
-        results[random_order] = shuffled_results
-        variances[random_order] = shuffled_variances
+            if self.nll_budget is not None and running_nll > self.nll_budget:
+                # Fill remaining with average so the sum is a valid (inflated) estimate
+                remaining = n_trials - pos - 1
+                if remaining > 0:
+                    avg = running_nll / (pos + 1)
+                    for future_idx in random_order[pos + 1:]:
+                        results[future_idx] = avg
+                        variances[future_idx] = 0.0
+                break
 
         return results, variances
 
     def optimize(self, x):
-        """Optimization function for BADS."""
+        """Optimization function for BADS. Updates repeat count via the ramp."""
+        if self._current_bads is not None:
+            effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
+            self.repeats = _dynamic_repeats(effective_iter, self._max_repeats)
+
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
         total_std = np.sqrt(vars_arr.sum())
 
+        if self._checkpoint_path and self._current_bads is not None and nlls < self._best_nll:
+            self._best_nll = float(nlls)
+            self._best_params = x.copy()
+            effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
+            self._poll_iter_history.append(int(effective_iter))
+            self._nll_history.append(self._best_nll)
+            checkpoint = {
+                "best_params": self._best_params.tolist(),
+                "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
+                "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
+                "poll_iter_history": self._poll_iter_history,
+                "nll_history": self._nll_history,
+            }
+            with open(self._checkpoint_path, "w") as f:
+                json.dump(checkpoint, f)
+
         if self.verbose:
+            param_print = {name: np.round(v, 3).item() for name, v in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
                   f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
-                  f"Params: {[np.round(x_, 3) for x_ in x]}")
+                  f"Params: {param_print}")
 
         self.iteration_count += 1
         return nlls.item(), total_std.item()
@@ -154,20 +208,102 @@ class SingleThreadedFitter:
     def fit(self,
             data: pd.DataFrame,
             manual_seed=None,
-            bads_options=None):
-        """Fit the model to data using BADS optimization."""
-        if bads_options is None:
-            bads_options = {'uncertainty_handling': True, 'display': 'iter'}
+            bads_options=None,
+            checkpoint_path=None,
+            atol_mesh=5e-3,
+            atol_fun=1e-7,
+            nll_budget=None):
+        """
+        Fit the model using single-threaded BADS with the same stopping criteria,
+        ramp schedule, and checkpoint format as MultiThreadedFitter.
+
+        Parameters
+        ----------
+        nll_budget : float or None
+            Per-evaluation early-exit threshold.  Evaluations whose running NLL sum
+            exceeds this value are terminated early.  Set to ``best_nll * 1.5`` for
+            an adaptive tripwire, or ``None`` to disable.
+        """
         self.time = time()
         MultiThreadedFitter.check_dataframe(data)
         self.data = data
+        self._checkpoint_path = checkpoint_path
+        self._best_nll = np.inf
+        self._best_params = None
+        self._nll_history = []
+        self._poll_iter_history = []
+        self.repeats = REPEAT_MIN
+        self.iteration_count = 0
+        self.nll_budget = nll_budget
 
-        bads = BADS(self.optimize, self.model.initial_params, self.model.lower_bound, self.model.upper_bound, self.model.plausible_lower_bound, self.model.plausible_upper_bound, options=bads_options)
-        fitted_params = bads.optimize()['x']
+        lb = self.model.lower_bound
+        ub = self.model.upper_bound
+        orig_plb = self.model.plausible_lower_bound
+        orig_pub = self.model.plausible_upper_bound
 
+        # Always enforce uncertainty-handling defaults; caller options override the rest.
+        active_options = {
+            'uncertainty_handling': True,
+            'specify_target_noise': True,
+            'noise_final_samples': 0,
+            'display': 'iter',
+        }
+        if bads_options:
+            active_options.update(bads_options)
+
+        gamma_orig = (orig_pub - orig_plb) / 2
+        active_options['tol_mesh'] = atol_mesh / np.mean(gamma_orig)
+        active_options['tol_fun'] = atol_fun
+
+        valid_ckpt = (checkpoint_path and os.path.exists(checkpoint_path)
+                      and os.path.getsize(checkpoint_path) > 0)
+        if valid_ckpt:
+            try:
+                with open(checkpoint_path) as f:
+                    ckpt = json.load(f)
+                if "best_params" not in ckpt or "poll_iter" not in ckpt or "mesh_size" not in ckpt:
+                    raise ValueError("Missing keys in checkpoint.")
+                x0 = np.array(ckpt["best_params"])
+                self._checkpoint_iter = int(ckpt["poll_iter"])
+                self._nll_history = ckpt.get("nll_history", [])
+                self._poll_iter_history = ckpt.get("poll_iter_history", [])
+                narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
+                buffer = 1e-3 * gamma_orig
+                plb = x0 - narrowing_factor * gamma_orig
+                pub = x0 + narrowing_factor * gamma_orig
+                lo_shift = np.maximum(0.0, lb + buffer - plb)
+                plb += lo_shift; pub += lo_shift
+                hi_shift = np.maximum(0.0, pub - (ub - buffer))
+                plb -= hi_shift; pub -= hi_shift
+                active_options["tol_mesh"] /= narrowing_factor
+                print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
+                      f"mesh_size={ckpt['mesh_size']:.4f}]")
+            except Exception as e:
+                print(f"\n[Warning] Failed to load checkpoint {checkpoint_path}: {e}")
+                x0 = self.model.initial_params
+                plb, pub = orig_plb, orig_pub
+                self._checkpoint_iter = 0
+        else:
+            x0 = self.model.initial_params
+            plb, pub = orig_plb, orig_pub
+            self._checkpoint_iter = 0
+
+        print(f"\n[BADS Optimization Start (SingleThreaded)]")
+        print(f"  Options: {active_options}")
+
+        bads = BADS(self.optimize, x0, lb, ub, plb, pub, options=active_options)
+        self._current_bads = bads
+        try:
+            result = bads.optimize()
+        finally:
+            self._current_bads = None
+
+        fitted_params = result['x']
         print(f"\t[Fitted Parameters]\t {fitted_params}")
         print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
 
+        self.repeats = self._max_repeats
+        self.nll_budget = None
         final_LL, _ = self.evaluate(fitted_params, self.data)
         return fitted_params, final_LL
 
@@ -197,13 +333,25 @@ def _process_chunk(args):
     return results, variances
 
 
-def _dynamic_repeats(effective_iter, max_repeats):
-    """Linearly ramp repeats from 5 to max_repeats over polls 5–19; hold at extremes."""
-    if effective_iter < 5:
-        return 5
-    if effective_iter >= 20:
+# IBS repeats: 5 during coarse BADS polls, linear ramp, then max_repeats for fine polls.
+REPEAT_RAMP_START_POLL = 15
+REPEAT_RAMP_END_POLL = 40
+REPEAT_MIN = 5
+
+
+def _dynamic_repeats(
+    effective_iter,
+    max_repeats,
+    ramp_start_poll=REPEAT_RAMP_START_POLL,
+    ramp_end_poll=REPEAT_RAMP_END_POLL,
+):
+    """Ramp repeats from REPEAT_MIN to max_repeats over [ramp_start_poll, ramp_end_poll]."""
+    if effective_iter < ramp_start_poll:
+        return REPEAT_MIN
+    if effective_iter >= ramp_end_poll:
         return max_repeats
-    return round(5 + (effective_iter - 5) * (max_repeats - 5) / (20 - 5))
+    span = ramp_end_poll - ramp_start_poll
+    return round(REPEAT_MIN + (effective_iter - ramp_start_poll) * (max_repeats - REPEAT_MIN) / span)
 
 
 class MultiThreadedFitter:
@@ -212,9 +360,9 @@ class MultiThreadedFitter:
     With n_workers=1, produces bit-for-bit identical results to SingleThreadedFitter.
 
     Runs a single-stage BADS optimization over the original, constant plausible bounds.
-    IBS repeats are scaled dynamically from 5 (global search) to n_repeats (final
-    refinement) based on the BADS poll iteration, eliminating coordinate-system
-    variance from bound shifting.
+    IBS repeats are scaled dynamically from 5 (coarse polls) to n_repeats (fine
+    polls) based on BADS poll iteration (ramp over polls 15–40 by default),
+    eliminating coordinate-system variance from bound shifting.
 
     Pass checkpoint_path to fit() to enable fault-tolerant resume: the best parameters,
     poll iteration, and u-space mesh size are written to a JSON file on each improvement.
