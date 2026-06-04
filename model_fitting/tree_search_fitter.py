@@ -86,6 +86,10 @@ class SingleThreadedFitter:
     - nll_budget: optional per-evaluation early-exit tripwire.  If the running NLL
       sum exceeds nll_budget before all trials are processed, the evaluation returns
       immediately with the partial sum.  Pass nll_budget=None to disable (default).
+    - nll_budget_factor: if set (e.g. 1.5), the tripwire is updated dynamically to
+      ``nll_budget_factor × best_nll_so_far`` before each evaluation.  Overrides a
+      static nll_budget when both are set.  Effective only after the first improvement
+      is recorded (before that, no budget is applied).
     """
 
     def __init__(self, model: TreeSearch, n_repeats=50, verbose=False):
@@ -104,6 +108,7 @@ class SingleThreadedFitter:
         self._nll_history = []
         self._poll_iter_history = []
         self.nll_budget = None
+        self.nll_budget_factor = None
         self.model._fitter = self
 
     def __getstate__(self):
@@ -173,26 +178,31 @@ class SingleThreadedFitter:
             effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
             self.repeats = _dynamic_repeats(effective_iter, self._max_repeats)
 
+        # Dynamic tripwire: update budget to factor × best NLL seen so far.
+        if self.nll_budget_factor is not None and np.isfinite(self._best_nll):
+            self.nll_budget = self._best_nll * self.nll_budget_factor
+
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
         total_std = np.sqrt(vars_arr.sum())
 
-        if self._checkpoint_path and self._current_bads is not None and nlls < self._best_nll:
+        if nlls < self._best_nll:
             self._best_nll = float(nlls)
-            self._best_params = x.copy()
-            effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
-            self._poll_iter_history.append(int(effective_iter))
-            self._nll_history.append(self._best_nll)
-            checkpoint = {
-                "best_params": self._best_params.tolist(),
-                "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
-                "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
-                "poll_iter_history": self._poll_iter_history,
-                "nll_history": self._nll_history,
-            }
-            with open(self._checkpoint_path, "w") as f:
-                json.dump(checkpoint, f)
+            if self._checkpoint_path and self._current_bads is not None:
+                self._best_params = x.copy()
+                effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
+                self._poll_iter_history.append(int(effective_iter))
+                self._nll_history.append(self._best_nll)
+                checkpoint = {
+                    "best_params": self._best_params.tolist(),
+                    "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
+                    "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
+                    "poll_iter_history": self._poll_iter_history,
+                    "nll_history": self._nll_history,
+                }
+                with open(self._checkpoint_path, "w") as f:
+                    json.dump(checkpoint, f)
 
         if self.verbose:
             param_print = {name: np.round(v, 3).item() for name, v in zip(self.model.param_names, x)}
@@ -212,7 +222,8 @@ class SingleThreadedFitter:
             checkpoint_path=None,
             atol_mesh=5e-3,
             atol_fun=1e-7,
-            nll_budget=None):
+            nll_budget=None,
+            nll_budget_factor=None):
         """
         Fit the model using single-threaded BADS with the same stopping criteria,
         ramp schedule, and checkpoint format as MultiThreadedFitter.
@@ -235,6 +246,7 @@ class SingleThreadedFitter:
         self.repeats = REPEAT_MIN
         self.iteration_count = 0
         self.nll_budget = nll_budget
+        self.nll_budget_factor = nll_budget_factor
 
         lb = self.model.lower_bound
         ub = self.model.upper_bound
