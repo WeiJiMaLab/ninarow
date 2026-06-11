@@ -69,7 +69,7 @@ def main():
     args = ap.parse_args()
 
     data = load_data(args.data_folder, n_trials=args.n_trials)
-    model = TreeSearch(templates=TEMPLATES, initial_values=WEIGHTS, verbose=False)
+    model = TreeSearch(feature_list=feature_list_from_templates(TEMPLATES, initial_values=WEIGHTS), verbose=False)
     if "feature_drop" in model.param_names:
         idx = model.param_names.index("feature_drop")
         model.initial_params[idx] = 0.0

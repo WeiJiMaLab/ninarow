@@ -6,7 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fourbynine import *
-from tree_search import TreeSearch
+from tree_search import TreeSearch, feature_list_from_templates
 from ninarow_utilities import bads_parameters_to_model_parameters
 
 def create_test_board(black_bits, white_bits):
@@ -59,7 +59,7 @@ def test_opp_scale_intuition():
         black_bits = ((1 << num_white) - 1) << 16 # Place dummy pieces far away
         
         board = create_test_board(black_bits, case["white_bits"])
-        ts = TreeSearch(templates={"target": case["template"]})
+        ts = TreeSearch(feature_list=feature_list_from_templates({"target": case["template"]}))
         
         # Params: [pruning, stopping, feature_drop, lapse, opp_scale, center_weight]
         control_vec = [100.0, 1.0, 0.0, 0.0, case["opp_scale"], 0.0]
@@ -85,7 +85,7 @@ def test_self_feature_weight():
     
     # Player 1 (Black) has 4IAR, Player 2 (White) has 4 dummy pieces
     board = create_test_board(0xF, 0xF0000)
-    ts = TreeSearch(templates={"4IAR": [[1, 1, 1, 1]]})
+    ts = TreeSearch(feature_list=feature_list_from_templates({"4IAR": [[1, 1, 1, 1]]}))
     
     # opp_scale=0.1 should NOT affect Player 1's features
     control_vec = [100.0, 1.0, 0.0, 0.0, 0.1, 0.0]
@@ -111,7 +111,7 @@ def test_initial_values():
     templates = {"A": [[1,1,1]], "B": [[1,1,1]]}
     initial_values = {"A": 1.5, "B": 2.5}
     
-    ts = TreeSearch(templates=templates, initial_values=initial_values)
+    ts = TreeSearch(feature_list=feature_list_from_templates(templates, initial_values=initial_values))
     
     # Retrieve initial values from the parameter list
     val_a = next(p["initial_value"] for p in ts.parameter_list if p["name"] == "A")
@@ -136,7 +136,7 @@ def test_legacy_equivalence():
         "4IAR": [[1, 1, 1, 1]]
     }
     
-    ts = TreeSearch(templates=templates)
+    ts = TreeSearch(feature_list=feature_list_from_templates(templates))
     
     # Legacy params: [pruning, stopping, feature_drop, lapse, opp_scale, center, 1iar, 2iar, 3iar, 4iar]
     params = [1.0, 1.0, 0.0, 0.0, 0.5, 0.0, 10.0, 20.0, 30.0, 40.0]

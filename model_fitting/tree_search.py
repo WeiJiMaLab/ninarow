@@ -43,7 +43,33 @@ DEFAULT_PARAMETER_LIST = [
     {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.25, "plausible_upper_bound": 4},
     {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -2, "plausible_upper_bound": 2},
 ]
-    
+
+
+# A feature_list entry defines a feature group's template AND its weight's
+# parameter spec together, so features and their weight bounds live in one place.
+# TreeSearch builds its templates + weight parameters from this list and assumes
+# each entry is COMPLETE (every weight-bound key present) — build via this helper.
+def feature_list_from_templates(templates, initial_values=None, **weight_bound_overrides):
+    """Build a feature_list (one entry per group: name + template + weight param
+    spec) from a ``{name: template}`` dict, filling the default weight bounds
+    (override any via kwargs; per-group inits via ``initial_values``)."""
+    weight_defaults = {
+        "initial_value": 0, "lower_bound": -20, "upper_bound": 100,
+        "plausible_lower_bound": -10, "plausible_upper_bound": 20,
+    }
+    feature_list = []
+    for name, template in templates.items():
+        spec = {"name": name, "template": template,
+                **weight_defaults, **weight_bound_overrides}
+        if initial_values and name in initial_values:
+            spec["initial_value"] = initial_values[name]
+        feature_list.append(spec)
+    return feature_list
+
+
+DEFAULT_FEATURE_LIST = feature_list_from_templates(DEFAULT_TEMPLATES)
+
+
 class TreeSearch:
     """
     Modular tree search model that constructs heuristics from templates.
@@ -53,30 +79,32 @@ class TreeSearch:
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
         self.name = "TreeSearch"
-        
+
         self.parameter_list = parameter_list.copy()
-        self.templates = templates.copy()
+        self.feature_list = list(feature_list)
+        self.templates = {f["name"]: f["template"] for f in self.feature_list}
         self.sorted_groups = sorted(self.templates.keys())
         self.features = make_features_from_groups(self.templates)
 
-        # Add feature weight parameters (one per template group)
+        # Append one weight parameter per feature group, from the feature_list.
+        # Entries must be complete — a missing bound key is an error, not a
+        # silent default (build the list via feature_list_from_templates).
+        spec = {f["name"]: f for f in self.feature_list}
         for group in self.sorted_groups:
-            initial_value = 0
-            if initial_values is not None:
-                initial_value = initial_values.get(group, 0)
+            f = spec[group]
             self.parameter_list.append({
                 "name": group,
-                "initial_value": initial_value,
-                "lower_bound": -20,
-                "upper_bound": 100,
-                "plausible_lower_bound": -10,
-                "plausible_upper_bound": 20
+                "initial_value": f["initial_value"],
+                "lower_bound": f["lower_bound"],
+                "upper_bound": f["upper_bound"],
+                "plausible_lower_bound": f["plausible_lower_bound"],
+                "plausible_upper_bound": f["plausible_upper_bound"],
             })
 
         # Compile parameters for optimization
-        self.compile_parameters(verbose = verbose)
+        self.compile_parameters(verbose=verbose)
 
     def compile_parameters(self, verbose = True):
         # Extract parameter arrays for optimization
@@ -179,8 +207,8 @@ class MyopicTreeSearch(TreeSearch):
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], templates, initial_values=initial_values, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], feature_list, verbose=verbose)
         self.name = "Myopic"
 
     def set_params(self, params):
@@ -203,8 +231,8 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     """
     Myopic tree search which ignores the opponent's features.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], templates, initial_values=initial_values, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], feature_list, verbose=verbose)
         self.name = "SelfOnly"
     
     def set_params(self, params):
@@ -225,10 +253,9 @@ class LesionTreeSearch(TreeSearch):
     """
     A TreeSearch model with a specific template group removed (lesioned).
     """
-    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, templates=DEFAULT_TEMPLATES, initial_values=None, verbose=True):
-        # Filter out the lesioned key
-        lesioned_templates = {k: v for k, v in templates.items() if k != lesion_key}
-        
-        super().__init__(parameter_list=parameter_list, templates=lesioned_templates, initial_values=initial_values, verbose=verbose)
+    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
+        # Drop the lesioned group's feature (and its weight parameter).
+        lesioned = [f for f in feature_list if f["name"] != lesion_key]
+        super().__init__(parameter_list=parameter_list, feature_list=lesioned, verbose=verbose)
         self.name = f"Lesion_{lesion_key}"
 
