@@ -79,8 +79,12 @@ class TreeSearch:
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True, exclude_feature_drop=False):
         self.name = "TreeSearch"
+        # When True, drop the (pinned-nuisance) feature_drop from the fitted parameter
+        # set so BADS does not spend mesh/design on it; set_params re-inserts 0.0 at its
+        # canonical control index. Mirrors how Myopic excludes stopping_prob.
+        self.exclude_feature_drop = exclude_feature_drop
 
         self.parameter_list = parameter_list.copy()
         self.feature_list = list(feature_list)
@@ -102,6 +106,11 @@ class TreeSearch:
                 "plausible_lower_bound": f["plausible_lower_bound"],
                 "plausible_upper_bound": f["plausible_upper_bound"],
             })
+
+        # Drop the pinned feature_drop nuisance from the search space (re-inserted as
+        # 0.0 in set_params). Done after the weight append so the order is unchanged.
+        if self.exclude_feature_drop:
+            self.parameter_list = [p for p in self.parameter_list if p["name"] != "feature_drop"]
 
         # Compile parameters for optimization
         self.compile_parameters(verbose=verbose)
@@ -157,7 +166,11 @@ class TreeSearch:
         assert len(params) == len(self.parameter_list), (
             f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
         )
-        self.heuristic = self.create_heuristic(params[:6], params[6:])
+        n_ctrl = 5 if self.exclude_feature_drop else 6
+        controls = list(params[:n_ctrl])
+        if self.exclude_feature_drop:
+            controls.insert(2, 0.0)  # feature_drop at canonical control index 2
+        self.heuristic = self.create_heuristic(controls, params[n_ctrl:])
         random_seed = random.randint(0, 2**64)
         self.heuristic.seed_generator(random_seed)
         # Store seed for debugging (if fitter has this attribute)
@@ -207,8 +220,8 @@ class MyopicTreeSearch(TreeSearch):
     and cached for efficient reuse. The create_heuristic method uses cached values
     to avoid redundant computation during parameter optimization.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], feature_list, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True, exclude_feature_drop=False):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob"], feature_list, verbose=verbose, exclude_feature_drop=exclude_feature_drop)
         self.name = "Myopic"
 
     def set_params(self, params):
@@ -217,10 +230,15 @@ class MyopicTreeSearch(TreeSearch):
             f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
         )
 
-        pruning_threshold, feature_drop, lapse_rate, opp_scale, center_weight = params[:5]
+        if self.exclude_feature_drop:
+            pruning_threshold, lapse_rate, opp_scale, center_weight = params[:4]
+            feature_drop, n_ctrl = 0.0, 4
+        else:
+            pruning_threshold, feature_drop, lapse_rate, opp_scale, center_weight = params[:5]
+            n_ctrl = 5
         control_vec = [pruning_threshold, 1.0, feature_drop, lapse_rate, opp_scale, center_weight]
 
-        self.heuristic = self.create_heuristic(control_vec, params[5:])
+        self.heuristic = self.create_heuristic(control_vec, params[n_ctrl:])
         random_seed = random.randint(0, 2**64)
         self.heuristic.seed_generator(random_seed)
         # Store seed for debugging (if fitter has this attribute)
@@ -231,19 +249,24 @@ class MyopicSelfOnlyTreeSearch(MyopicTreeSearch):
     """
     Myopic tree search which ignores the opponent's features.
     """
-    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
-        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], feature_list, verbose=verbose)
+    def __init__(self, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True, exclude_feature_drop=False):
+        super().__init__([param for param in parameter_list if param["name"] != "stopping_prob" and param["name"] != "opp_scale"], feature_list, verbose=verbose, exclude_feature_drop=exclude_feature_drop)
         self.name = "SelfOnly"
-    
+
     def set_params(self, params):
         """Set parameters and construct heuristic from templates (vectorized, fixed order)."""
         assert len(params) == len(self.parameter_list), (
             f"Parameter length mismatch! Expected {len(self.parameter_list)} but got {len(params)}"
         )
 
-        pruning_threshold, feature_drop, lapse_rate, center_weight = params[:4]
+        if self.exclude_feature_drop:
+            pruning_threshold, lapse_rate, center_weight = params[:3]
+            feature_drop, n_ctrl = 0.0, 3
+        else:
+            pruning_threshold, feature_drop, lapse_rate, center_weight = params[:4]
+            n_ctrl = 4
         control_vec = [pruning_threshold, 1.0, feature_drop, lapse_rate, 0.0, center_weight]
-        self.heuristic = self.create_heuristic(control_vec, params[4:])
+        self.heuristic = self.create_heuristic(control_vec, params[n_ctrl:])
         random_seed = random.randint(0, 2**64)
         self.heuristic.seed_generator(random_seed)
         if hasattr(self, "_fitter"):
@@ -253,9 +276,9 @@ class LesionTreeSearch(TreeSearch):
     """
     A TreeSearch model with a specific template group removed (lesioned).
     """
-    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True):
+    def __init__(self, lesion_key, parameter_list=DEFAULT_PARAMETER_LIST, feature_list=DEFAULT_FEATURE_LIST, verbose=True, exclude_feature_drop=False):
         # Drop the lesioned group's feature (and its weight parameter).
         lesioned = [f for f in feature_list if f["name"] != lesion_key]
-        super().__init__(parameter_list=parameter_list, feature_list=lesioned, verbose=verbose)
+        super().__init__(parameter_list=parameter_list, feature_list=lesioned, verbose=verbose, exclude_feature_drop=exclude_feature_drop)
         self.name = f"Lesion_{lesion_key}"
 
