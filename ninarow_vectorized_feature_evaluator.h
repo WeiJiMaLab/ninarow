@@ -28,6 +28,13 @@ class VectorizedBitsetCounter {
   Eigen::Matrix<std::size_t, N, Eigen::Dynamic> bitset_matrix;
 
   /**
+   * The registered bitsets, kept as-is for the single-bitset popcount path
+   * (see query_popcount). The matmul in query() amortizes only over many input
+   * bitsets; single-bitset overlap counts are computed directly here instead.
+   */
+  std::vector<std::bitset<N>> registered_bitsets;
+
+  /**
    * Converts a bitset to a one-dimensional vector of size_ts
    *
    * @param bitset The set of bits to convert.
@@ -78,6 +85,25 @@ class VectorizedBitsetCounter {
   void register_bitset(const std::bitset<N> &bitset) {
     bitset_matrix.conservativeResize(Eigen::NoChange, bitset_matrix.cols() + 1);
     bitset_matrix.col(bitset_matrix.cols() - 1) = bitset_to_vector(bitset);
+    registered_bitsets.push_back(bitset);
+  }
+
+  /**
+   * Overlap count of a single query bitset against every registered bitset:
+   * out[i] = popcount(query_bits & registered_bitsets[i]). This is exactly what
+   * query() computes for a single input bitset, but without forming a dense
+   * matrix or multiplying — the search evaluates one board at a time, so the
+   * batched matmul never amortizes and a direct popcount is the right tool.
+   *
+   * @param query_bits The bitset to count overlaps for.
+   *
+   * @return Per-registered-bitset overlap counts, in registration order.
+   */
+  std::vector<std::size_t> query_popcount(const std::bitset<N> &query_bits) const {
+    std::vector<std::size_t> out(registered_bitsets.size());
+    for (std::size_t i = 0; i < registered_bitsets.size(); ++i)
+      out[i] = (query_bits & registered_bitsets[i]).count();
+    return out;
   }
 
   /**
@@ -204,11 +230,14 @@ class VectorizedFeatureEvaluator {
    */
   std::vector<std::size_t> query_pieces(const Board &board,
                                         Player player) const {
-    return query_pieces(std::vector<Board>{board}, player)[0];
+    // Single-board overlap count == popcount(player_pieces & feature_pieces) per
+    // feature. Bit-for-bit identical to the matmul path, but far cheaper for the
+    // one-board-at-a-time queries the search makes.
+    return feature_pieces_bitsets.query_popcount(board.get_pieces(player).positions);
   }
 
   std::vector<std::size_t> query_spaces(const Board &board) const {
-    return query_spaces(std::vector<Board>{board})[0];
+    return feature_spaces_bitsets.query_popcount(board.get_spaces().positions);
   }
   /**
    * @}
