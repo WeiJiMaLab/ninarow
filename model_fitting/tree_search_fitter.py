@@ -345,10 +345,11 @@ def _process_chunk(args):
     return results, variances
 
 
-# IBS repeats: 5 during coarse BADS polls, linear ramp, then max_repeats for fine polls.
-REPEAT_RAMP_START_POLL = 15
-REPEAT_RAMP_END_POLL = 40
-REPEAT_MIN = 5
+# IBS repeats: REPEAT_MIN during coarse BADS polls, linear ramp, then max_repeats for
+# fine polls. Overridable via env (for ramp-schedule profiling) with the usual defaults.
+REPEAT_RAMP_START_POLL = int(os.environ.get("IBS_RAMP_START", 15))
+REPEAT_RAMP_END_POLL = int(os.environ.get("IBS_RAMP_END", 40))
+REPEAT_MIN = int(os.environ.get("IBS_REPEAT_MIN", 5))
 
 
 def _dynamic_repeats(
