@@ -474,7 +474,14 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     auto opponent_pieces = feature_evaluator.query_pieces(b, other_player);
     auto spaces = feature_evaluator.query_spaces(b);
 
-    boost::unordered_map<typename Board::PatternT, typename Board::MoveT, typename Board::PatternHasherT> candidate_moves;
+    // Candidate move values per empty square, indexed directly by board position
+    // (0..board_size-1). This replaces a hash map whose keys were single-bit
+    // patterns 1<<i — i.e. just position indices — so a flat array + a presence
+    // bitset gives identical results without per-call hashing or node allocation,
+    // and without the hundreds of hashed find() lookups the feature loops below do.
+    constexpr std::size_t kBoardSize = Board::get_board_size();
+    std::vector<typename Board::MoveT> move_at(kBoardSize);  // Move() default per slot
+    std::bitset<kBoardSize> present;
     double deltaL = 0.0;
     
     // for feature in features, if feature is enabled, check if the feature is contained in player_pieces or opponent_pieces
@@ -490,7 +497,8 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     }
 
     for (const auto i : b.get_spaces().get_all_position_indices()) {
-      candidate_moves[typename Board::PatternT(1LLU << i)] = typename Board::MoveT(i, deltaL + center_weight * vtile[i] + (noise_enabled ? noise(engine) : 0.0), player);
+      move_at[i] = typename Board::MoveT(i, deltaL + center_weight * vtile[i] + (noise_enabled ? noise(engine) : 0.0), player);
+      present.set(i);
     }
 
     for (const auto& feature : features) {
@@ -503,10 +511,14 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
                                            spaces[i])) {
         const typename Board::PatternT player_missing_pieces =
             feature.feature.missing_pieces(b, player);
-        auto search = candidate_moves.find(player_missing_pieces);
-        if (search != candidate_moves.end()) {
-          search->second.val +=
-              c_pass * feature_group_weights[feature.weight_index].weight_pass;
+        // The map's keys were single-bit patterns; a multi-bit pattern never
+        // matched, so only a single-bit (single-square) pattern can apply here.
+        if (player_missing_pieces.positions.count() == 1) {
+          const std::size_t idx = static_cast<std::size_t>(
+              __builtin_ctzll(player_missing_pieces.positions.to_ullong()));
+          if (present.test(idx))
+            move_at[idx].val +=
+                c_pass * feature_group_weights[feature.weight_index].weight_pass;
         }
       }
 
@@ -518,24 +530,25 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
       if (can_be_removed || can_remove_opponent) {
         for (const auto& position : feature.feature.spaces.get_all_positions()) {
           if (b.contains_spaces(position)) {
-            auto search = candidate_moves.find(position);
-            if (search != candidate_moves.end()) {
-              if (can_be_removed)       search->second.val -= c_pass * feature_group_weights[feature.weight_index].weight_pass;
-              if (can_remove_opponent)  search->second.val += c_act * feature_group_weights[feature.weight_index].weight_act;
+            // get_all_positions() yields single-square patterns.
+            const std::size_t idx = static_cast<std::size_t>(
+                __builtin_ctzll(position.positions.to_ullong()));
+            if (present.test(idx)) {
+              if (can_be_removed)       move_at[idx].val -= c_pass * feature_group_weights[feature.weight_index].weight_pass;
+              if (can_remove_opponent)  move_at[idx].val += c_act * feature_group_weights[feature.weight_index].weight_act;
             }
           }
         }
       }
     }
 
+    // Iterating the array by index yields moves in ascending board_position
+    // order — the same order the previous explicit position-sort produced — so
+    // the value-sort below receives an identical input sequence.
     std::vector<typename Board::MoveT> output_moves;
-    for (const auto kv : candidate_moves) {
-      output_moves.push_back(kv.second);
-    }
-    std::sort(output_moves.begin(), output_moves.end(),
-              [](const auto& m1, const auto& m2) {
-                return m1.board_position < m2.board_position;
-              });
+    output_moves.reserve(present.count());
+    for (std::size_t i = 0; i < kBoardSize; ++i)
+      if (present.test(i)) output_moves.push_back(move_at[i]);
 
     if (!sorted) return output_moves;
     std::sort(output_moves.begin(), output_moves.end(), std::greater<>());
