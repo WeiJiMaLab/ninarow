@@ -651,4 +651,7 @@ class MultiThreadedFitter:
             assert row.move >= 0, f"Row {i}: Move must be a non-negative integer."
             assert row.color.lower() in ['white', 'black'], f"Row {i}: Color must be either 'white' or 'black'."
             assert bin(row.move).count('1') == 1, f"Row {i}: Invalid move given: {row.move} does not represent a valid move (must have exactly one space occupied)."
+            assert (int(row.black) | int(row.white) | int(row.move)) < (1 << 36), f"Row {i}: bitboard/move has a bit beyond the 36-square board."
+            assert int(row.black) & int(row.white) == 0, f"Row {i}: black and white occupy the same square."
+            assert (int(row.black) | int(row.white)) & int(row.move) == 0, f"Row {i}: move {row.move} lands on an already-occupied square."
             assert fourbynine_board(fourbynine_pattern(row.black), fourbynine_pattern(row.white)).active_player() == (row.color.lower() == 'white'), f"Row {i}:  it is not {row.color}'s turn to move."
