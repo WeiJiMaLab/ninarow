@@ -27,7 +27,7 @@ importable module (`fourbynine`).
 | `tests/cpp/` | Tests for the C++ code. |
 | `tests/python/` | Tests for the Python fitting code. |
 | `model_fitting/` | The Python fitting pipeline. **This is where you'll spend most of your time.** Has its own README with a full walkthrough — see below. |
-| `demos/` | A small example script. |
+| `parameter_recovery/` | A pipeline sanity check: can fitting recover known ground-truth weights from data it generated itself? See `model_fitting/README.md`. |
 | `data/` | Not tracked by git. Where you put your own move data to fit models to. |
 | `docs/` | Auto-generated reference docs for the C++ code (built with Doxygen). |
 

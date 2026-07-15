@@ -54,13 +54,14 @@ model_fitting/
   tree_search_fitter.py   The fitting engines (see "How fitting works" below)
   multistart.py           Shared code for running many fit attempts and picking the best one
   scripts/                The tools you actually run for a real fit (see below)
-  parameter_recovery/     A sanity check: can the fitting process recover known answers?
-  feature_generator.py    Turns a feature template into the actual board patterns
-  ninarow_utilities.py    A couple of helper functions
+  utils.py                Board/feature math: bitboard patterns, heuristic construction, BADS<->heuristic param conversion
   fourbynine.py / _swig_fourbynine.so   Auto-generated Python binding to the C++ code (don't edit)
   config.yaml             Default starting values and bounds for each weight
   requirements.txt
 ```
+
+`parameter_recovery/` (the pipeline sanity check described below) lives at
+the repo root, as a sibling of `model_fitting/`, not inside this folder.
 
 (An older version of this folder had more files — a GUI board explorer,
 some plotting helpers, an older fitting script called `model_fit.py`, etc.
@@ -281,34 +282,43 @@ luckiest one" problem either.
 
 ## `parameter_recovery/`
 
+Lives at the repo root (`../parameter_recovery/` from here), as a sibling of
+`model_fitting/`, not inside it.
+
 A sanity check for the whole pipeline: pick a known set of weights, use the
 model to generate fake data as if a "true" player with those weights
-existed, then run the normal fitting process on that fake data and see if
+existed, then refit that fake data through the *same* multistart hot path
+`scripts/fit_all.py` uses (`fit_one_start` per random restart, then
+`select_winner`'s high-repeat re-evaluation to pick the best one) and see if
 it recovers weights close to the ones you started with. If it can't recover
 its own known ground truth, something's wrong with the fitting process
 itself (not with real data).
 
-- `recovery_common.py` — shared setup for the recovery experiment.
-- `export_ground_truth.py` — pulls known parameter values from the
-  `monkey_4iar` project's existing fits (this is the only file here that
-  reaches outside this repo).
-- `generate.py` — creates the fake data.
-- `recover.py` — runs one recovery attempt (fits fake data back to
-  estimated weights); meant to be run once per test case, e.g. as one job
-  in a SLURM array.
-- `fast_recover.py` — a small, quick version of the same idea (a couple of
-  minutes instead of a full run) for a fast sanity check.
-- `analyze.py` — summarizes results across many recovery attempts (how
-  close were the recovered weights to the true ones, on average).
-- `submit_recovery.sh` — SLURM submission script for `recover.py`.
+- `fast_recover.py` — builds N synthetic "participants" from real board
+  positions in `data/sample`, each with its own randomly-drawn ground-truth
+  weights, and refits them. Deliberately runs with a smaller multistart
+  budget than production (fewer restarts/repeats, and a capped BADS
+  evaluation budget) so a full sanity-check run takes minutes, not the
+  ~1-day-per-restart production budget — this checks a recoverability
+  *lower bound*, not full convergence. Pass `--exclude-feature-drop` to
+  freeze `feature_drop` out of the fitted parameter vector entirely
+  (mirrors the `monkey_4iar` production regime) instead of merely pinning
+  it to a narrow range. Writes `data/recovery/participant<i>/0.csv` (fake
+  trial data, same schema as `data/sample`) and `recovery.json`
+  (ground-truth vs. recovered weights) for each synthetic participant.
+- `analyze.py` — summarizes results across all recovery attempts in a
+  results directory: a per-parameter true-vs-recovered scatter grid
+  (`recovery.png`) and a summary CSV (Pearson r, bias, RMSE per parameter).
+- `submit_recovery.sh` — SLURM array submission script for `fast_recover.py`
+  (one task per synthetic participant; works for a single task or many
+  running concurrently).
 
 ## Other files
 
-- `feature_generator.py` — turns a small pattern template (like
+- `utils.py` — board/feature math: turns a small pattern template (like
   "4 in a row") into the full list of concrete board positions that match
-  it.
-- `ninarow_utilities.py` — a couple of small helper functions, including
-  one for converting between an older parameterization and this one.
+  it, builds a heuristic from control params + templates, and converts
+  between an older BADS parameterization and this one.
 - `fourbynine.py` / `_swig_fourbynine.so` — the auto-generated Python
   interface to the C++ engine. Don't hand-edit these.
 

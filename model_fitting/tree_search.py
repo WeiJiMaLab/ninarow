@@ -6,7 +6,7 @@ import fourbynine
 import pickle
 import yaml
 from fourbynine import DoubleVector
-from feature_generator import (
+from utils import (
     make_features_from_groups,
     create_feature
 )

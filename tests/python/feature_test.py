@@ -7,7 +7,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.
 
 from fourbynine import *
 from tree_search import TreeSearch, feature_list_from_templates
-from ninarow_utilities import bads_parameters_to_model_parameters
+from utils import bads_parameters_to_model_parameters
 
 def create_test_board(black_bits, white_bits):
     """Creates a legal board state with given bit patterns."""
