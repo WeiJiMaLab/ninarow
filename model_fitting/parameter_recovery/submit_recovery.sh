@@ -22,8 +22,7 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}"
+cd "${SLURM_SUBMIT_DIR}"
 mkdir -p logs
 
 # n_workers follows the SLURM allocation (recover.py reads SLURM_CPUS_PER_TASK).

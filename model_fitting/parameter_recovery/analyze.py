@@ -17,9 +17,15 @@ import pandas as pd
 
 
 def load_results(results_dir):
-    files = sorted(Path(results_dir).glob("recovery_*.json"))
+    """Load recovery records either from the flat legacy layout
+    (recovery_*.json directly under results_dir) or the participant-mirrored
+    layout (results_dir/participant<i>/recovery.json)."""
+    results_dir = Path(results_dir)
+    files = sorted(results_dir.glob("participant*/recovery.json"))
     if not files:
-        raise FileNotFoundError(f"No recovery_*.json in {results_dir}")
+        files = sorted(results_dir.glob("recovery_*.json"))
+    if not files:
+        raise FileNotFoundError(f"No recovery.json / recovery_*.json under {results_dir}")
     records = [json.loads(p.read_text()) for p in files]
     names = records[0]["param_names"]
     for r in records:

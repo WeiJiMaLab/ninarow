@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import yaml
+
 from tree_search import TreeSearch
 import json
 import os
@@ -12,6 +16,12 @@ from multiprocessing import Pool
 
 from numba import int32, float64, boolean
 from numba.experimental import jitclass
+
+# Shared BADS noise-handling defaults (see config.yaml's `bads` section) — the
+# single source every fitter/pipeline layers its own overrides (display,
+# max_fun_evals, ...) on top of, so they can't silently drift apart.
+with open(Path(__file__).resolve().parent / "config.yaml") as _f:
+    BADS_DEFAULTS = dict(yaml.safe_load(_f)["bads"])
 
 spec = [
     ('repeats', int32),
@@ -123,21 +133,7 @@ class SingleThreadedFitter:
 
     def process_single_trial(self, trial):
         """Process a single trial. Model must be set_params'd before calling."""
-        tracker = IBSTracker(repeats=self.repeats)
-        board = fourbynine_board(fourbynine_pattern(int(trial.black)), fourbynine_pattern(int(trial.white)))
-        actual_move = int(trial.move).bit_length() - 1
-        while not tracker.done:
-            tracker.record(self.model.predict(board) == actual_move)
-        return tracker.nll, tracker.variance_of_mean
-
-    def get_random_order(self, n):
-        indices = list(range(n))
-        random_order = []
-        while indices:
-            idx = random.choice(indices)
-            indices.remove(idx)
-            random_order.append(idx)
-        return random_order
+        return _ibs_trial_nll(self.model, int(trial.black), int(trial.white), int(trial.move), self.repeats)
 
     def evaluate(self, params, data: pd.DataFrame):
         """
@@ -147,7 +143,7 @@ class SingleThreadedFitter:
         """
         self.model.set_params(params)
         n_trials = len(data)
-        random_order = self.get_random_order(n_trials)
+        random_order = _get_random_order(n_trials)
 
         results = np.zeros(n_trials, dtype=np.float32)
         variances = np.zeros(n_trials, dtype=np.float32)
@@ -185,7 +181,7 @@ class SingleThreadedFitter:
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
-        total_std = np.sqrt(vars_arr.sum())
+        sum_std = np.sqrt(vars_arr.sum())
 
         if nlls < self._best_nll:
             self._best_nll = float(nlls)
@@ -194,26 +190,23 @@ class SingleThreadedFitter:
                 effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
                 self._poll_iter_history.append(int(effective_iter))
                 self._nll_history.append(self._best_nll)
-                checkpoint = {
-                    "best_params": self._best_params.tolist(),
-                    "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
-                    "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
-                    "poll_iter_history": self._poll_iter_history,
-                    "nll_history": self._nll_history,
-                }
-                with open(self._checkpoint_path, "w") as f:
-                    json.dump(checkpoint, f)
+                _write_checkpoint(
+                    self._checkpoint_path, self._best_params,
+                    self._current_bads.optim_state.get("iter", 0),
+                    self._current_bads.optim_state.get("mesh_size", 1.0),
+                    self._poll_iter_history, self._nll_history,
+                )
 
         if self.verbose:
             param_print = {name: np.round(v, 3).item() for name, v in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
+                  f"NLL(n={self.repeats}): {nlls:.5g} ± {sum_std:.3g}\t "
                   f"Params: {param_print}")
 
         self.iteration_count += 1
-        return nlls.item(), total_std.item()
+        return nlls.item(), sum_std.item()
 
     def fit(self,
             data: pd.DataFrame,
@@ -254,12 +247,7 @@ class SingleThreadedFitter:
         orig_pub = self.model.plausible_upper_bound
 
         # Always enforce uncertainty-handling defaults; caller options override the rest.
-        active_options = {
-            'uncertainty_handling': True,
-            'specify_target_noise': True,
-            'noise_final_samples': 0,
-            'display': 'iter',
-        }
+        active_options = {**BADS_DEFAULTS, 'display': 'iter'}
         if bads_options:
             active_options.update(bads_options)
 
@@ -271,22 +259,9 @@ class SingleThreadedFitter:
                       and os.path.getsize(checkpoint_path) > 0)
         if valid_ckpt:
             try:
-                with open(checkpoint_path) as f:
-                    ckpt = json.load(f)
-                if "best_params" not in ckpt or "poll_iter" not in ckpt or "mesh_size" not in ckpt:
-                    raise ValueError("Missing keys in checkpoint.")
-                x0 = np.array(ckpt["best_params"])
-                self._checkpoint_iter = int(ckpt["poll_iter"])
-                self._nll_history = ckpt.get("nll_history", [])
-                self._poll_iter_history = ckpt.get("poll_iter_history", [])
-                narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
-                buffer = 1e-3 * gamma_orig
-                plb = x0 - narrowing_factor * gamma_orig
-                pub = x0 + narrowing_factor * gamma_orig
-                lo_shift = np.maximum(0.0, lb + buffer - plb)
-                plb += lo_shift; pub += lo_shift
-                hi_shift = np.maximum(0.0, pub - (ub - buffer))
-                plb -= hi_shift; pub -= hi_shift
+                (x0, plb, pub, self._checkpoint_iter, self._nll_history,
+                 self._poll_iter_history, narrowing_factor, ckpt) = _load_checkpoint_bounds(
+                    checkpoint_path, gamma_orig, lb, ub)
                 active_options["tol_mesh"] /= narrowing_factor
                 print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
                       f"mesh_size={ckpt['mesh_size']:.4f}]")
@@ -312,12 +287,70 @@ class SingleThreadedFitter:
 
         fitted_params = result['x']
         print(f"\t[Fitted Parameters]\t {fitted_params}")
-        print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
+        print("\t[Final NLL]\t Estimating final NLL...")
 
         self.repeats = self._max_repeats
         self.nll_budget = None
-        final_LL, _ = self.evaluate(fitted_params, self.data)
-        return fitted_params, final_LL
+        final_nll, _ = self.evaluate(fitted_params, self.data)
+        return fitted_params, final_nll
+
+
+def _get_random_order(n):
+    """Random permutation of indices [0, n)."""
+    indices = list(range(n))
+    random_order = []
+    while indices:
+        idx = random.choice(indices)
+        indices.remove(idx)
+        random_order.append(idx)
+    return random_order
+
+
+def _load_checkpoint_bounds(checkpoint_path, gamma_orig, lb, ub):
+    """Read a checkpoint JSON and compute (x0, plb, pub, checkpoint_iter, nll_history,
+    poll_iter_history, narrowing_factor) for resuming. Raises on missing/malformed data;
+    caller is responsible for falling back to scratch initialization."""
+    with open(checkpoint_path) as f:
+        ckpt = json.load(f)
+    if "best_params" not in ckpt or "poll_iter" not in ckpt or "mesh_size" not in ckpt:
+        raise ValueError("Missing keys in checkpoint.")
+    x0 = np.array(ckpt["best_params"])
+    checkpoint_iter = int(ckpt["poll_iter"])
+    nll_history = ckpt.get("nll_history", [])
+    poll_iter_history = ckpt.get("poll_iter_history", [])
+    narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
+    buffer = 1e-3 * gamma_orig
+    plb = x0 - narrowing_factor * gamma_orig
+    pub = x0 + narrowing_factor * gamma_orig
+    # Rigid-body shift: fix lower overflow, then upper overflow.
+    lo_shift = np.maximum(0.0, lb + buffer - plb)
+    plb += lo_shift; pub += lo_shift
+    hi_shift = np.maximum(0.0, pub - (ub - buffer))
+    plb -= hi_shift; pub -= hi_shift
+    return x0, plb, pub, checkpoint_iter, nll_history, poll_iter_history, narrowing_factor, ckpt
+
+
+def _write_checkpoint(path, best_params, poll_iter, mesh_size, poll_iter_history, nll_history):
+    """Persist the checkpoint JSON shared by SingleThreadedFitter/MultiThreadedFitter's fit()."""
+    checkpoint = {
+        "best_params": best_params.tolist(),
+        "poll_iter": int(poll_iter),
+        "mesh_size": float(mesh_size),
+        "poll_iter_history": poll_iter_history,
+        "nll_history": nll_history,
+    }
+    with open(path, "w") as f:
+        json.dump(checkpoint, f)
+
+
+def _ibs_trial_nll(model, black, white, move, repeats):
+    """Run IBS on one trial (model must already be set_params'd) and return (nll, variance_of_mean)."""
+    tracker = IBSTracker(repeats=repeats)
+    board = fourbynine_board(fourbynine_pattern(black), fourbynine_pattern(white))
+    actual_move = move.bit_length() - 1
+    while not tracker.done:
+        tracker.record(model.predict(board) == actual_move)
+    return tracker.nll, tracker.variance_of_mean
 
 
 def _init_worker(model):
@@ -335,13 +368,9 @@ def _process_chunk(args):
     results = []
     variances = []
     for black, white, move in chunk:
-        tracker = IBSTracker(repeats=repeats)
-        board = fourbynine_board(fourbynine_pattern(black), fourbynine_pattern(white))
-        actual_move = move.bit_length() - 1
-        while not tracker.done:
-            tracker.record(_worker_model.predict(board) == actual_move)
-        results.append(tracker.nll)
-        variances.append(tracker.variance_of_mean)
+        nll, variance = _ibs_trial_nll(_worker_model, black, white, move, repeats)
+        results.append(nll)
+        variances.append(variance)
     return results, variances
 
 
@@ -411,16 +440,6 @@ class MultiThreadedFitter:
         self._pool = None
         self._current_bads = None
 
-    def get_random_order(self, n):
-        """Generate a random permutation of indices [0, n) using the same method as original."""
-        indices = list(range(n))
-        random_order = []
-        while indices:
-            idx = random.choice(indices)
-            indices.remove(idx)
-            random_order.append(idx)
-        return random_order
-
     def _get_pool(self):
         if self._pool is None:
             self._pool = Pool(
@@ -455,7 +474,7 @@ class MultiThreadedFitter:
         self.last_seed = heuristic_seed
 
         n_trials = len(data)
-        random_order = self.get_random_order(n_trials)
+        random_order = _get_random_order(n_trials)
 
         # Vectorize the column reads once; .iloc per trial builds a fresh Series
         # each call (~195 ms/eval at 400 trials). Identical tuples, ~4-5% faster fits.
@@ -494,7 +513,7 @@ class MultiThreadedFitter:
         self.time = time()
         nlls_arr, vars_arr = self.evaluate(x, self.data)
         nlls = nlls_arr.sum()
-        total_std = np.sqrt(vars_arr.sum())
+        sum_std = np.sqrt(vars_arr.sum())
 
         if self._checkpoint_path and self._current_bads is not None and nlls < self._best_nll:
             self._best_nll = float(nlls)
@@ -502,26 +521,23 @@ class MultiThreadedFitter:
             effective_iter = self._checkpoint_iter + self._current_bads.optim_state.get("iter", 0)
             self._poll_iter_history.append(int(effective_iter))
             self._nll_history.append(self._best_nll)
-            checkpoint = {
-                "best_params": self._best_params.tolist(),
-                "poll_iter": int(self._current_bads.optim_state.get("iter", 0)),
-                "mesh_size": float(self._current_bads.optim_state.get("mesh_size", 1.0)),
-                "poll_iter_history": self._poll_iter_history,
-                "nll_history": self._nll_history,
-            }
-            with open(self._checkpoint_path, "w") as f:
-                json.dump(checkpoint, f)
+            _write_checkpoint(
+                self._checkpoint_path, self._best_params,
+                self._current_bads.optim_state.get("iter", 0),
+                self._current_bads.optim_state.get("mesh_size", 1.0),
+                self._poll_iter_history, self._nll_history,
+            )
 
         if self.verbose:
             param_print = {name: np.round(v, 3).item() for name, v in zip(self.model.param_names, x)}
             iter_str = f"[BADS-{self.iteration_count}]"
             print(f"{iter_str:>30} "
                   f"time: {time() - self.time:.3g}s\t "
-                  f"NLL(n={self.repeats}): {nlls:.5g} ± {total_std:.3g}\t "
+                  f"NLL(n={self.repeats}): {nlls:.5g} ± {sum_std:.3g}\t "
                   f"Params: {param_print}")
 
         self.iteration_count += 1
-        return nlls.item(), total_std.item()
+        return nlls.item(), sum_std.item()
 
     def print_params(self, x, lower_bound, upper_bound, plausible_lower_bound, plausible_upper_bound):
         header = f"{'Parameter':>20} :\t{'lo'}\t{'plo'}\t{'x0'}\t{'phi'}\t{'hi'}"
@@ -547,7 +563,7 @@ class MultiThreadedFitter:
         fresh run.
         """
         if bads_options is None:
-            bads_options = {'uncertainty_handling': True, 'display': 'iter'}
+            bads_options = {**BADS_DEFAULTS, 'display': 'iter'}
 
         self.time = time()
         self.__class__.check_dataframe(data)
@@ -572,32 +588,9 @@ class MultiThreadedFitter:
 
         if checkpoint_path and os.path.exists(checkpoint_path):
             try:
-                with open(checkpoint_path) as f:
-                    ckpt = json.load(f)
-
-                if "best_params" not in ckpt or "poll_iter" not in ckpt or "mesh_size" not in ckpt:
-                    raise ValueError("Missing essential keys in checkpoint JSON.")
-
-                x0 = np.array(ckpt["best_params"])
-                self._checkpoint_iter = int(ckpt["poll_iter"])
-                self._nll_history = ckpt.get("nll_history", [])
-                self._poll_iter_history = ckpt.get("poll_iter_history", [])
-                narrowing_factor = max(0.1, float(ckpt["mesh_size"]))
-
-                gamma_orig = (orig_pub - orig_plb) / 2
-                buffer = 1e-3 * gamma_orig
-
-                plb = x0 - narrowing_factor * gamma_orig
-                pub = x0 + narrowing_factor * gamma_orig
-
-                # Rigid-body shift: fix lower overflow, then upper overflow.
-                lo_shift = np.maximum(0.0, lb + buffer - plb)
-                plb += lo_shift
-                pub += lo_shift
-                hi_shift = np.maximum(0.0, pub - (ub - buffer))
-                plb -= hi_shift
-                pub -= hi_shift
-
+                (x0, plb, pub, self._checkpoint_iter, self._nll_history,
+                 self._poll_iter_history, narrowing_factor, ckpt) = _load_checkpoint_bounds(
+                    checkpoint_path, gamma_orig, lb, ub)
                 active_options["tol_mesh"] /= narrowing_factor
 
                 print(f"\n[Resuming from checkpoint: poll_iter={self._checkpoint_iter}, "
@@ -630,11 +623,11 @@ class MultiThreadedFitter:
 
         fitted_params = result['x']
         print(f"\t[Fitted Parameters]\t {fitted_params}")
-        print("\t[Final Log-likelihood]\t Estimating final log-likelihood...")
+        print("\t[Final NLL]\t Estimating final NLL...")
 
         self.repeats = self._max_repeats
-        final_LL, _ = self.evaluate(fitted_params, self.data)
-        return fitted_params, final_LL
+        final_nll, _ = self.evaluate(fitted_params, self.data)
+        return fitted_params, final_nll
 
     @staticmethod
     def check_dataframe(data):

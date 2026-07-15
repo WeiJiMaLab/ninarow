@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from tree_search import TreeSearch
-from tree_search_fitter import MultiThreadedFitter
+from tree_search_fitter import MultiThreadedFitter, BADS_DEFAULTS
 
 REQUIRED_COLUMNS = {"black", "white", "move", "color"}
 
@@ -98,18 +98,18 @@ def main():
     print(f"Using n_workers={n_workers}")
     model = TreeSearch(verbose=args.verbose)
     fitter = MultiThreadedFitter(model, verbose=args.verbose, n_repeats=args.n_repeats, n_workers=n_workers)
-    bads_options = {"uncertainty_handling": True, "specify_target_noise": True, "display": "iter"}
+    bads_options = {**BADS_DEFAULTS, "display": "iter"}
     try:
-        params, train_ll = fitter.fit(train, bads_options=bads_options)
+        params, train_nll = fitter.fit(train, bads_options=bads_options)
         print("Finished fitting, evaluating held-out split...")
-        test_ll, _ = fitter.evaluate(params, test)
+        test_nll, _ = fitter.evaluate(params, test)
     finally:
         fitter.close()
 
     print(f"Fitted params: {params}")
-    print(f"Train NLL: {sum(train_ll):.4f}")
-    print(f"Test NLL: {sum(test_ll):.4f}")
-    return params, train_ll, test_ll
+    print(f"Train NLL: {sum(train_nll):.4f}")
+    print(f"Test NLL: {sum(test_nll):.4f}")
+    return params, train_nll, test_nll
 
 
 if __name__ == "__main__":

@@ -79,11 +79,11 @@ def make_features_from_groups(group_templates, m=4, n=9, directions="-/\\|"):
     
     return features_by_group
 
-def create_feature(pieces, empty, min_empty):
+def create_feature(pieces, spaces, min_empty):
     """Convert bitboards into a fourbynine heuristic feature."""
     return fourbynine_heuristic_feature(
-        fourbynine_pattern(pieces), 
-        fourbynine_pattern(empty), 
+        fourbynine_pattern(pieces),
+        fourbynine_pattern(spaces),
         min_empty
     )
 
@@ -91,14 +91,14 @@ def create_feature(pieces, empty, min_empty):
 def build_control_params(control_params):
     """Order control parameters for the C++ heuristic constructor."""
     pruning = control_params["pruning_threshold"]
-    stop_prob = control_params["stopping_prob"]
+    stopping_prob = control_params["stopping_prob"]
     lapse = control_params["lapse_rate"]
     center_weight = control_params["center_weight"]
 
     base_control = [
         10000.0,         # Fixed stopping threshold
         pruning,
-        stop_prob,
+        stopping_prob,
         lapse,
         1.0,             # Exploration constant placeholder
         1.0,             # Opponent scale placeholder

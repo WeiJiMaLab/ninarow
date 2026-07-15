@@ -1,0 +1,41 @@
+# Default TreeSearch parameter bounds — single source of truth for
+# tree_search.py's DEFAULT_PARAMETER_LIST / DEFAULT_FEATURE_LIST.
+#
+# Mirrors the production ÷5 "OG" regime validated in monkey_4iar
+# (src/models.py: PARAMETER_LIST_V2 controls + FEATURE_LIST_OG weights),
+# so a fresh TreeSearch() here starts from the same bounds as the monkey_4iar
+# fits/recovery. Update both sides together if the regime changes.
+#
+# feature_drop is pinned near 0 (a fixed-small range, not truly equal bounds,
+# since BADS rejects lb==ub) — it's a nuisance parameter, not fit in production.
+
+controls:
+  # name:              [lower_bound, plausible_lower_bound, initial_value, plausible_upper_bound, upper_bound]
+  pruning_threshold: [  0.0,  2.0,    5.0,   9.5,  10.0]
+  stopping_prob:     [ 0.05,  0.2,   0.45,   0.7,   1.0]
+  feature_drop:      [  0.0,  0.0, 0.0005, 0.001, 0.001]
+  lapse_rate:        [ 0.02, 0.02,   0.05,  0.15,   0.5]
+  opp_scale:         [  0.0,  1.0,    2.3,   3.5,   5.0]
+  center_weight:     [-10.0, -2.0,    0.2,   3.0,  10.0]
+
+# Feature-group weights, ÷5 production scale. Hard bounds are uniform across
+# groups (a search hint only lives in the plausible band); the OG hard bound
+# here is high-scale [-20, 120] ÷ 5 = [-4, 24].
+weights:
+  hard_lower_bound: -4.0
+  hard_upper_bound: 24.0
+  groups:
+    # name:     [plausible_lower_bound, initial_value, plausible_upper_bound]
+    2IAR_DIS: [-0.2, 0.5,  1.4]
+    2IAR_CON: [ 0.2, 0.9,  1.8]
+    3IAR:     [ 1.6, 3.0,  4.4]
+    4IAR:     [ 5.0, 9.6, 15.0]
+
+# Shared BADS options — the IBS noise-handling defaults every fitter/pipeline
+# needs (uncertainty_handling/specify_target_noise/noise_final_samples). Each
+# call site layers its own overrides (display, max_fun_evals, ...) on top of
+# this base rather than repeating these three by hand, so they can't drift.
+bads:
+  uncertainty_handling: true
+  specify_target_noise: true
+  noise_final_samples: 0

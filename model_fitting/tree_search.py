@@ -1,10 +1,13 @@
+from pathlib import Path
+
 import numpy as np
 import random
 import fourbynine
 import pickle
+import yaml
 from fourbynine import DoubleVector
 from feature_generator import (
-    make_features_from_groups, 
+    make_features_from_groups,
     create_feature
 )
 
@@ -15,16 +18,22 @@ DEFAULT_TEMPLATES = {
     "2IAR_DIS": [[1, 0, 0, 1], [1, 0, 1, 0], [0, 1, 0, 1]],
 }
 
-
+# Default parameter/weight bounds live in config.yaml (single source of truth,
+# mirrored from the monkey_4iar production ÷5 "OG" regime) rather than inline
+# here, so the two repos' defaults can't silently drift apart.
+_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
+with open(_CONFIG_PATH) as _f:
+    _CONFIG = yaml.safe_load(_f)
 
 DEFAULT_PARAMETER_LIST = [
-    {"name": "pruning_threshold", "initial_value": 0.2, "lower_bound": 0.0001, "upper_bound": 10, "plausible_lower_bound": 0.1, "plausible_upper_bound": 8},
-    {"name": "stopping_prob", "initial_value": 0.9, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.3, "plausible_upper_bound": 0.99},
-    {"name": "feature_drop", "initial_value": 0.3, "lower_bound": 0, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.5},
-    {"name": "lapse_rate", "initial_value": 0.3, "lower_bound": 0.05, "upper_bound": 1, "plausible_lower_bound": 0.1, "plausible_upper_bound": 0.2},
-    {"name": "opp_scale", "initial_value": 1.0, "lower_bound": 0.0, "upper_bound": 5, "plausible_lower_bound": 0.25, "plausible_upper_bound": 4},
-    {"name": "center_weight", "initial_value": 0.4, "lower_bound": -10, "upper_bound": 10, "plausible_lower_bound": -2, "plausible_upper_bound": 2},
+    {"name": name, "lower_bound": vals[0], "plausible_lower_bound": vals[1],
+     "initial_value": vals[2], "plausible_upper_bound": vals[3], "upper_bound": vals[4]}
+    for name, vals in _CONFIG["controls"].items()
 ]
+
+_WEIGHT_HARD_LB = _CONFIG["weights"]["hard_lower_bound"]
+_WEIGHT_HARD_UB = _CONFIG["weights"]["hard_upper_bound"]
+_WEIGHT_GROUP_BANDS = _CONFIG["weights"]["groups"]
 
 
 # A feature_list entry defines a feature group's template AND its weight's
@@ -34,15 +43,23 @@ DEFAULT_PARAMETER_LIST = [
 def feature_list_from_templates(templates, initial_values=None, **weight_bound_overrides):
     """Build a feature_list (one entry per group: name + template + weight param
     spec) from a ``{name: template}`` dict, filling the default weight bounds
-    (override any via kwargs; per-group inits via ``initial_values``)."""
+    (override any via kwargs; per-group inits via ``initial_values``).
+
+    Defaults come from config.yaml's ``weights`` section: groups named there
+    (the OG 4-group set) get their own initial/plausible band; any other group
+    name falls back to a flat uninformative band at the same hard bounds.
+    """
     weight_defaults = {
-        "initial_value": 0, "lower_bound": -20, "upper_bound": 100,
-        "plausible_lower_bound": -10, "plausible_upper_bound": 20,
+        "initial_value": 0, "lower_bound": _WEIGHT_HARD_LB, "upper_bound": _WEIGHT_HARD_UB,
+        "plausible_lower_bound": _WEIGHT_HARD_LB / 2, "plausible_upper_bound": _WEIGHT_HARD_UB / 2,
     }
     feature_list = []
     for name, template in templates.items():
-        spec = {"name": name, "template": template,
-                **weight_defaults, **weight_bound_overrides}
+        spec = {"name": name, "template": template, **weight_defaults}
+        if name in _WEIGHT_GROUP_BANDS:
+            plb, init, pub = _WEIGHT_GROUP_BANDS[name]
+            spec.update(initial_value=init, plausible_lower_bound=plb, plausible_upper_bound=pub)
+        spec.update(weight_bound_overrides)
         if initial_values and name in initial_values:
             spec["initial_value"] = initial_values[name]
         feature_list.append(spec)
@@ -106,14 +123,14 @@ class TreeSearch:
         self.plausible_upper_bound = np.array([param["plausible_upper_bound"] for param in self.parameter_list], dtype=np.float32)
         self.plausible_lower_bound = np.array([param["plausible_lower_bound"] for param in self.parameter_list], dtype=np.float32)        
 
-    def create_heuristic(self, control_vec, feature_vec):
+    def create_heuristic(self, control_vec, weight_vec):
         """
         Construct heuristic directly from ordered parameter arrays.
         
         Args:
             control_vec: [pruning_threshold, stopping_prob, feature_drop, lapse_rate, opp_scale, center_weight]
-            feature_vec: one weight per template group (sorted)
-        
+            weight_vec: one weight per template group (sorted)
+
         Returns:
             A heuristic created from cached templates and features
         """
@@ -121,9 +138,9 @@ class TreeSearch:
 
         # 1. Initialize heuristic (no features yet)
         control_params = [
-            10000.0, 
-            float(pruning_threshold), 
-            float(stopping_prob), 
+            10000.0,
+            float(pruning_threshold),
+            float(stopping_prob),
             float(lapse_rate),
             1.0, 
             1.0, 
@@ -132,7 +149,7 @@ class TreeSearch:
         heuristic = fourbynine.fourbynine_heuristic.create(DoubleVector(control_params), False)
 
         # 2. Add feature groups and features
-        for weight, group_name in zip(feature_vec, self.sorted_groups):
+        for weight, group_name in zip(weight_vec, self.sorted_groups):
             weight = float(weight)
             # opp_scale is now meant to be the scale of the opponent's features
             # e.g. 0.5 means opponent features mean half as much as self features

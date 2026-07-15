@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from tree_search import TreeSearch
-from tree_search_fitter import MultiThreadedFitter
+from tree_search_fitter import MultiThreadedFitter, BADS_DEFAULTS
 from run_fit import default_n_workers
 
 # Re-evaluation config for winner selection: a single fit's IBS NLL is too noisy to
@@ -43,25 +43,41 @@ def _atomic_write_json(path, record):
     os.replace(tmp, path)
 
 
+def to_named(values, param_names):
+    """Zip an ordered array of values with param_names into a plain dict, in order."""
+    return {name: float(v) for name, v in zip(param_names, values)}
+
+
+def to_array(named_or_array, param_names):
+    """Inverse of to_named: accepts either a {name: value} dict (read back in
+    param_names order — dicts preserve insertion order, but we look up by name
+    rather than trust it) or a plain array (legacy records written before params
+    were named), and returns a plain float array in param_names order."""
+    if isinstance(named_or_array, dict):
+        return np.asarray([named_or_array[name] for name in param_names], dtype=float)
+    return np.asarray(named_or_array, dtype=float)
+
+
 def write_start_json(path, record):
     """Persist one multistart's result atomically with a success marker, so a start
     file's mere existence means "this start finished cleanly" (tmp -> fsync -> rename)."""
     _atomic_write_json(path, {**record, "status": "ok"})
 
 
-def write_result_json(path, held_out_index, winner, train_nll, test_nll, n_starts):
+def write_result_json(path, held_out_index, winner, train_nll, test_nll, n_starts, param_names):
     """Persist the winning fit for one (participant, held-out fold) grid point.
 
-    train_nll is collapsed to a scalar (sum over training trials); test_nll is kept
-    as the full per-trial array (needed for downstream bootstrapping over held-out
-    trials, not just its sum).
+    params/x0 are written as {param_name: value} dicts (not bare arrays) so the JSON
+    is self-describing. train_nll is collapsed to a scalar (sum over training trials);
+    test_nll is kept as the full per-trial array (needed for downstream bootstrapping
+    over held-out trials, not just its sum).
     """
     record = {
         "held_out_index": held_out_index,
         "winning_start": winner["start"],
         "n_starts": n_starts,
-        "params": winner["params"],
-        "x0": winner["x0"],
+        "params": to_named(to_array(winner["params"], param_names), param_names),
+        "x0": to_named(to_array(winner["x0"], param_names), param_names),
         "train_nll_raw": winner["train_nll_raw"],
         "train_nll_reeval": winner.get("train_nll_reeval"),
         "train_nll": float(np.sum(train_nll)),
@@ -77,7 +93,9 @@ def write_result_json(path, held_out_index, winner, train_nll, test_nll, n_start
 def _start_is_clean(record):
     if record.get("status", "ok") != "ok":
         return False
-    params = np.asarray(record.get("params", []), dtype=float)
+    raw_params = record.get("params", [])
+    values = list(raw_params.values()) if isinstance(raw_params, dict) else raw_params
+    params = np.asarray(values, dtype=float)
     return (
         params.size > 0
         and bool(np.all(np.isfinite(params)))
@@ -108,26 +126,27 @@ def fit_one_start(model, train_data, start, seed=0, n_workers=None, n_repeats=50
     x0 = start_x0(start, model, seed)
     model.initial_params = x0
     fitter = MultiThreadedFitter(model, verbose=verbose, n_repeats=n_repeats, n_workers=n_workers)
-    bads_options = {"uncertainty_handling": True, "specify_target_noise": True, "display": "iter" if verbose else "off"}
+    bads_options = {**BADS_DEFAULTS, "display": "iter" if verbose else "off"}
     try:
-        params, train_ll = fitter.fit(train_data, bads_options=bads_options)
+        params, train_nll = fitter.fit(train_data, bads_options=bads_options)
     finally:
         fitter.close()
     return {
         "start": start,
-        "x0": np.asarray(x0, dtype=float).tolist(),
-        "params": np.asarray(params, dtype=float).tolist(),
-        "train_nll_raw": float(np.sum(train_ll)),
+        "x0": to_named(x0, model.param_names),
+        "params": to_named(params, model.param_names),
+        "train_nll_raw": float(np.sum(train_nll)),
     }
 
 
-def sample_nll(fitter, params, data, n_evals):
+def sample_nll(fitter, params, param_names, data, n_evals):
     """Mean total NLL over n_evals IBS evaluations at fitter.repeats (+ SEM) — a pure
-    read of the model at `params`, does not refit. Used to re-evaluate multistart
-    candidates before argmin'ing a winner."""
+    read of the model at `params` (a {name: value} dict or plain array), does not
+    refit. Used to re-evaluate multistart candidates before argmin'ing a winner."""
+    params_arr = to_array(params, param_names)
     totals = []
     for _ in range(n_evals):
-        nlls, _ = fitter.evaluate(np.asarray(params, dtype=np.float64), data)
+        nlls, _ = fitter.evaluate(params_arr, data)
         totals.append(float(np.sum(nlls)))
     totals = np.asarray(totals)
     sem = float(totals.std(ddof=1) / np.sqrt(len(totals))) if len(totals) > 1 else float("nan")
@@ -149,11 +168,11 @@ def select_winner(model_factory, starts, train_data, test_data, n_workers=None,
     fitter = MultiThreadedFitter(model, verbose=verbose, n_repeats=reeval_repeats, n_workers=n_workers)
     try:
         for record in starts:
-            mean_nll, sem = sample_nll(fitter, record["params"], train_data, n_evals)
+            mean_nll, sem = sample_nll(fitter, record["params"], model.param_names, train_data, n_evals)
             record["train_nll_reeval"] = mean_nll
             record["train_nll_reeval_sem"] = sem
         winner_idx = int(np.argmin([r["train_nll_reeval"] for r in starts]))
-        winner_params = np.asarray(starts[winner_idx]["params"], dtype=float)
+        winner_params = to_array(starts[winner_idx]["params"], model.param_names)
         train_nll, _ = fitter.evaluate(winner_params, train_data)
         test_nll, _ = fitter.evaluate(winner_params, test_data)
     finally:

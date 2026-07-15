@@ -71,7 +71,7 @@ class NInARowBestFirstSearch
     // Hard stop version (for compatibility):
     // return iterations >= (std::size_t(1.0 / heuristic->get_gamma()) + 1) ||
     return iterations >= max_iterations ||
-           num_repetitions >= heuristic->get_stopping_thresh() ||
+           num_repetitions >= heuristic->get_stopping_threshold() ||
            Search<Heuristic, BFSNode<typename Heuristic::BoardT>>::
                stopping_conditions(heuristic, board);
   }

@@ -144,10 +144,10 @@ class ComprehensiveParameterTuner:
         
         # Add some specific high-impact configurations based on previous results
         high_impact_configs = [
-            # Stopping probability variations
-            ("stopping_probability", 0.1, baseline_params.copy()),
-            ("stopping_probability", 0.5, baseline_params.copy()),
-            ("stopping_probability", 1.0, baseline_params.copy()),
+            # Stopping-probability variations
+            ("stopping_prob", 0.1, baseline_params.copy()),
+            ("stopping_prob", 0.5, baseline_params.copy()),
+            ("stopping_prob", 1.0, baseline_params.copy()),
             # Pruning threshold variations  
             ("pruning_threshold", 0.1, baseline_params.copy()),
             ("pruning_threshold", 0.5, baseline_params.copy()),

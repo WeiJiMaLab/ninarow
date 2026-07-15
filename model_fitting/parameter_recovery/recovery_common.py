@@ -15,7 +15,6 @@ and the BADS options so that generation and refitting use identical settings.
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 # Make the sibling ninarow model_fitting importable regardless of CWD.
@@ -24,6 +23,7 @@ if str(_MODEL_FITTING) not in sys.path:
     sys.path.insert(0, str(_MODEL_FITTING))
 
 from tree_search import TreeSearch, feature_list_from_templates  # noqa: E402
+from tree_search_fitter import BADS_DEFAULTS  # noqa: E402
 
 # Full 6-group heuristic template set (matches monkey_4iar production fit.py).
 # 1IAR is the single-piece group with no existing MLE fit; its ground-truth weight
@@ -39,9 +39,7 @@ SIX_TEMPLATES = {
 
 # Mirrors monkey_4iar TreeSearchRunner so recovery fits behave like production.
 DEFAULT_BADS_OPTIONS = {
-    "uncertainty_handling": True,
-    "specify_target_noise": True,
-    "noise_final_samples": 0,
+    **BADS_DEFAULTS,
     "tol_fun": 1e-7,
     "tol_mesh": 1e-3,
     "fun_eval_start": 20,
@@ -62,23 +60,6 @@ def param_names(model=None):
     if model is None:
         model = build_model()
     return list(model.param_names)
-
-
-def params_dict_to_vector(values, model=None):
-    """Map a {param_name: value} dict to the model's ordered parameter vector."""
-    names = param_names(model)
-    missing = set(names) - set(values)
-    if missing:
-        raise ValueError(f"Missing parameters: {sorted(missing)}")
-    return np.array([float(values[n]) for n in names], dtype=np.float64)
-
-
-def params_vector_to_dict(vector, model=None):
-    """Inverse of params_dict_to_vector."""
-    names = param_names(model)
-    if len(vector) != len(names):
-        raise ValueError(f"Expected {len(names)} params, got {len(vector)}")
-    return {n: float(v) for n, v in zip(names, vector)}
 
 
 def load_boards(path, max_trials=None, seed=0):

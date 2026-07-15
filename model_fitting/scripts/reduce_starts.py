@@ -35,12 +35,16 @@ def reduce_starts(data_dir, n_splits, held_out_index, n_starts, n_workers=None,
     if n_evals is not None:
         kwargs["n_evals"] = n_evals
 
+    model_factory = default_model_factory(verbose=verbose)
     winner_idx, winner, train_nll, test_nll = select_winner(
-        default_model_factory(verbose=verbose), starts, train, test,
+        model_factory, starts, train, test,
         n_workers=n_workers, verbose=verbose, **kwargs,
     )
     result_path = data_dir / "results" / f"{held_out_index}.json"
-    write_result_json(result_path, held_out_index, winner, train_nll, test_nll, n_starts)
+    write_result_json(
+        result_path, held_out_index, winner, train_nll, test_nll, n_starts,
+        model_factory().param_names,
+    )
     print(f"reduce: winner=start {winner['start']} ({winner_idx + 1}/{len(starts)} clean starts)")
     print(f"Fitted params: {winner['params']}")
     print(f"Train NLL: {sum(train_nll):.4f}")

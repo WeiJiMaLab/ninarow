@@ -29,26 +29,50 @@ from run_fit import check_data_dir, load_split
 SBATCH_TEMPLATE = Path(__file__).resolve().parent / "fit_one_start.sbatch"
 MODEL_FITTING_DIR = Path(__file__).resolve().parent.parent
 
+_USE_COLOR = sys.stdout.isatty()
+_CODES = {
+    "bold": "1", "dim": "2",
+    "red": "31", "green": "32", "yellow": "33",
+    "blue": "34", "magenta": "35", "cyan": "36",
+}
+
+
+def c(text, *styles):
+    """Wrap text in ANSI codes for the given style names (see _CODES). No-op when
+    stdout isn't a TTY (piped/redirected output stays plain, e.g. into a log file)."""
+    if not _USE_COLOR:
+        return text
+    prefix = "".join(f"\033[{_CODES[s]}m" for s in styles)
+    return f"{prefix}{text}\033[0m"
+
+
+def success(text):
+    return f"{c('[Success]', 'green', 'bold')} {text}"
+
+
+def failure(text):
+    return f"{c('[Failure]', 'red', 'bold')} {text}"
+
 
 def prompt_choice(question, options):
-    print(f"\n[Query]\n{question}")
+    print(f"\n{c('[Query]', 'cyan', 'bold')}\n{c(question, 'bold')}")
     for i, opt in enumerate(options, 1):
-        print(f"  {i}) {opt}")
+        print(f"  {c(str(i) + ')', 'yellow')} {opt}")
     while True:
-        raw = input("> ").strip()
+        raw = input(f"{c('>', 'cyan', 'bold')} ").strip()
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return int(raw) - 1
-        print(f"Please enter a number 1-{len(options)}.")
+        print(c(f"Please enter a number 1-{len(options)}.", "red"))
 
 
 def prompt_yes_no(question):
     while True:
-        raw = input(f"{question} (y/n) ").strip().lower()
+        raw = input(f"{c(question, 'bold')} {c('(y/n)', 'dim')} ").strip().lower()
         if raw in ("y", "yes"):
             return True
         if raw in ("n", "no"):
             return False
-        print("Please enter y or n.")
+        print(c("Please enter y or n.", "red"))
 
 
 def detect_participants(data_dir, n_splits):
@@ -85,9 +109,11 @@ def run_one_grid_point_sequential(participant_dir, n_splits, held_out_index, n_s
         n_workers=n_workers, verbose=verbose,
     )
     result_path = participant_dir / "results" / f"{held_out_index}.json"
-    write_result_json(result_path, held_out_index, winner, train_nll, test_nll, n_starts)
-    print(f"  [{participant_dir.name}] fold {held_out_index} winner: start {winner['start']} "
-          f"({winner_idx + 1}/{n_starts}) train_nll={sum(train_nll):.4f} test_nll={sum(test_nll):.4f}")
+    write_result_json(result_path, held_out_index, winner, train_nll, test_nll, n_starts, model.param_names)
+    print(success(
+        f"[{participant_dir.name}] fold {held_out_index} winner: start {winner['start']} "
+        f"({winner_idx + 1}/{n_starts}) train_nll={sum(train_nll):.4f} test_nll={sum(test_nll):.4f}"
+    ))
     print(f"  [{participant_dir.name}] fold {held_out_index} results written to {result_path}")
     return winner, train_nll, test_nll
 
@@ -99,14 +125,14 @@ def run_sequential(participants, n_splits, n_starts, n_workers, n_repeats, verbo
     for participant_dir in participants:
         for held_out_index in range(n_splits):
             done += 1
-            print(f"\n--- Grid point {done}/{total}: "
-                  f"{participant_dir.name} fold {held_out_index} ---")
+            print(c(f"\n--- Grid point {done}/{total}: "
+                     f"{participant_dir.name} fold {held_out_index} ---", "magenta", "bold"))
             winner, train_nll, test_nll = run_one_grid_point_sequential(
                 participant_dir, n_splits, held_out_index, n_starts, n_workers, n_repeats, verbose,
             )
             results[(participant_dir.name, held_out_index)] = (winner, train_nll, test_nll)
 
-    print("\n=== Summary ===")
+    print(c("\n=== Summary ===", "yellow", "bold"))
     for (name, fold), (winner, train_nll, test_nll) in results.items():
         print(f"{name} fold {fold}: train_nll={sum(train_nll):.4f} test_nll={sum(test_nll):.4f}")
     print("\nResults written to <participant_dir>/results/<held_out_index>.json for each grid point, e.g.:")
@@ -115,7 +141,7 @@ def run_sequential(participants, n_splits, n_starts, n_workers, n_repeats, verbo
     return results
 
 
-def suggest_fit_time(n_repeats, n_splits):
+def suggest_fit_time(n_repeats):
     """Rough sbatch --time suggestion for one fit-array task (one BADS start). Scales
     with n_repeats (dominant cost driver: IBS repeats per BADS function eval) off a
     ~1-day baseline at n_repeats=40 (the monkey_4iar production ramp top); floored at
@@ -164,8 +190,10 @@ def run_parallel(participants, n_splits, n_starts, n_repeats, account, cores_per
                     fit_cmd, text=True, stderr=subprocess.STDOUT
                 ).strip().split(";")[0]
             except subprocess.CalledProcessError as e:
-                print(f"  [{participant_dir.name}] fold {held_out_index}: "
-                      f"fit array submission FAILED, skipping this grid point:\n{e.output}")
+                print(failure(
+                    f"[{participant_dir.name}] fold {held_out_index}: "
+                    f"fit array submission FAILED, skipping this grid point:\n{e.output}"
+                ))
                 submitted.append((participant_dir.name, held_out_index, None, None))
                 continue
 
@@ -192,27 +220,32 @@ def run_parallel(participants, n_splits, n_starts, n_repeats, account, cores_per
                     reduce_cmd, text=True, stderr=subprocess.STDOUT
                 ).strip()
             except subprocess.CalledProcessError as e:
-                print(f"  [{participant_dir.name}] fold {held_out_index}: "
-                      f"fit array {fit_job_id} submitted OK, but reduce submission FAILED:\n{e.output}")
+                print(failure(
+                    f"[{participant_dir.name}] fold {held_out_index}: "
+                    f"fit array {fit_job_id} submitted OK, but reduce submission FAILED:\n{e.output}"
+                ))
                 submitted.append((participant_dir.name, held_out_index, fit_job_id, None))
                 continue
 
-            print(f"  [{participant_dir.name}] fold {held_out_index}: "
-                  f"fit array {fit_job_id} ({n_starts} starts) -> reduce {reduce_job_id}")
+            print(success(
+                f"[{participant_dir.name}] fold {held_out_index}: "
+                f"fit array {fit_job_id} ({n_starts} starts) -> reduce {reduce_job_id}"
+            ))
             submitted.append((participant_dir.name, held_out_index, fit_job_id, reduce_job_id))
 
     ok = [s for s in submitted if s[3] is not None]
     failed = [s for s in submitted if s[3] is None]
-    print(f"\nSubmitted {len(ok)}/{len(submitted)} (fit array + reduce) job pairs successfully.")
+    print(c(f"\nSubmitted {len(ok)}/{len(submitted)} (fit array + reduce) job pairs successfully.",
+            "green" if not failed else "yellow", "bold"))
     if failed:
-        print(f"FAILED to fully submit {len(failed)} grid point(s): "
-              + ", ".join(f"{name} fold {fold}" for name, fold, _, _ in failed))
-    print("Monitor with: squeue -u $USER")
-    print(f"Reduce logs land in: {logs_dir}/reduce_<jobid>.log")
+        print(failure(f"Failed to fully submit {len(failed)} grid point(s): "
+              + ", ".join(f"{name} fold {fold}" for name, fold, _, _ in failed)))
+    print(c("Monitor with: squeue -u $USER", "dim"))
+    print(c(f"Reduce logs land in: {logs_dir}/reduce_<jobid>.log", "dim"))
     print("\nOnce each reduce job finishes, results land in "
           "<participant_dir>/results/<held_out_index>.json, e.g.:")
     for participant_dir in participants:
-        print(f"  {participant_dir / 'results'}/")
+        print(f"  {c(str(participant_dir / 'results'), 'cyan')}/")
     return submitted
 
 
@@ -228,24 +261,24 @@ def main():
     parser.add_argument("--yes", action="store_true", help="Skip the final confirmation prompt.")
     args = parser.parse_args()
 
-    print("Beginning 4IAR fitting ...")
+    print(c("Beginning 4IAR fitting ...", "bold"))
     data_dir = Path(args.data_dir)
 
     print("Detecting folder ...")
     if not data_dir.is_dir():
-        sys.exit(f"[Failure] Folder not found: {data_dir}")
-    print("[Success] Folder found!")
+        sys.exit(failure(f"Folder not found: {data_dir}"))
+    print(success("Folder found!"))
 
     participants = detect_participants(data_dir, args.n_splits)
     if not participants:
-        sys.exit(f"[Failure] No participant subdirectories with {args.n_splits} CV splits found under {data_dir}")
-    print(f"[Success] Detected {args.n_splits} CV splits")
-    print(f"[Success] Detected {len(participants)} participant(s): "
-          + ", ".join(p.name for p in participants))
+        sys.exit(failure(f"No participant subdirectories with {args.n_splits} CV splits found under {data_dir}"))
+    print(success(f"Detected {args.n_splits} CV splits"))
+    print(success(f"Detected {len(participants)} participant(s): "
+                   + ", ".join(p.name for p in participants)))
 
     total_jobs = args.n_starts * args.n_splits * len(participants)
-    print(f"\nThis consists of [{args.n_starts} x {args.n_splits} x {len(participants)}] "
-          f"= {total_jobs} jobs")
+    print(c(f"\nThis consists of [{args.n_starts} x {args.n_splits} x {len(participants)}] "
+            f"= {total_jobs} jobs", "yellow", "bold"))
 
     mode = prompt_choice(
         "How should the multi-start fit run?",
@@ -256,37 +289,39 @@ def main():
     cores_per_job = None
     fit_time = None
     if mode == 1:
-        account = input("\nSLURM account to submit under: ").strip()
+        account = input(f"\n{c('SLURM account to submit under:', 'bold')} ").strip()
         if not account:
-            sys.exit("An account is required for the parallel path.")
-        cores_raw = input("Cores per job (--cpus-per-task) [8]: ").strip()
+            sys.exit(failure("An account is required for the parallel path."))
+        cores_raw = input(f"{c('Cores per job (--cpus-per-task)', 'bold')} {c('[8]', 'dim')}: ").strip()
         cores_per_job = int(cores_raw) if cores_raw else 8
         if cores_per_job <= 0:
-            sys.exit(f"Cores per job must be positive, got {cores_per_job}")
-        suggested_time = suggest_fit_time(args.n_repeats, args.n_splits)
+            sys.exit(failure(f"Cores per job must be positive, got {cores_per_job}"))
+        suggested_time = suggest_fit_time(args.n_repeats)
         time_raw = input(
-            f"Time limit per fit job (--time), suggested for n_repeats={args.n_repeats} "
-            f"[{suggested_time}]: "
+            f"{c('Time limit per fit job (--time)', 'bold')}, suggested for "
+            f"n_repeats={args.n_repeats} {c(f'[{suggested_time}]', 'dim')}: "
         ).strip()
         fit_time = time_raw or suggested_time
 
-    print(f"\nData directory : {data_dir}")
-    print(f"Participants   : {len(participants)} ({', '.join(p.name for p in participants)})")
-    print(f"CV splits      : {args.n_splits}")
-    print(f"Multistarts    : {args.n_starts}")
-    print(f"Total jobs     : {total_jobs}")
-    print(f"Mode           : {'Sequential' if mode == 0 else 'Parallel (sbatch)'}")
+    label = lambda s: c(s, "cyan")
+    print(f"\n{label('Data directory')} : {data_dir}")
+    print(f"{label('Participants  ')} : {len(participants)} ({', '.join(p.name for p in participants)})")
+    print(f"{label('CV splits     ')} : {args.n_splits}")
+    print(f"{label('Multistarts   ')} : {args.n_starts}")
+    print(f"{label('Total jobs    ')} : {c(str(total_jobs), 'yellow', 'bold')}")
+    print(f"{label('Mode          ')} : {'Sequential' if mode == 0 else 'Parallel (sbatch)'}")
     if account:
-        print(f"SLURM account  : {account}")
+        print(f"{label('SLURM account ')} : {account}")
     if cores_per_job:
         total_cores = total_jobs * cores_per_job
-        print(f"Cores per job  : {cores_per_job}")
-        print(f"Total cores    : {total_jobs} jobs x {cores_per_job} cores = {total_cores} cores")
+        print(f"{label('Cores per job ')} : {cores_per_job}")
+        print(f"{label('Total cores   ')} : {total_jobs} jobs x {cores_per_job} cores "
+              f"= {c(str(total_cores), 'yellow', 'bold')} cores")
     if fit_time:
-        print(f"Time per job   : {fit_time}")
+        print(f"{label('Time per job  ')} : {fit_time}")
 
     if not args.yes and not prompt_yes_no("\nProceed?"):
-        print("Aborted.")
+        print(c("Aborted.", "red"))
         return
 
     if mode == 0:

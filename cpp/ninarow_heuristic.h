@@ -143,7 +143,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * a tree search as the best consecutively before we terminate the search and
    * return the given move.
    */
-  double stopping_thresh;
+  double stopping_threshold;
 
   /**
    * A parameter controlling how the heuristic will prune the search tree. In
@@ -154,7 +154,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
    * worse than the best move in a given position by `pruning_threshold`, as
    * determined by the heuristic evaluation function.
    */
-  double pruning_thresh;
+  double pruning_threshold;
 
   /**
    * A parameter controlling when searches should stop executing. `gamma` is the
@@ -304,8 +304,8 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
           "heuristic function.");
     }
     std::size_t i = 0;
-    stopping_thresh = params[i++]; 
-    pruning_thresh = params[i++];
+    stopping_threshold = params[i++]; 
+    pruning_threshold = params[i++];
     gamma = params[i++];
     lapse_rate = params[i++];
     opp_scale = params[i++];
@@ -348,8 +348,8 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     uint32_t first_int;
     iss >> first_int;
     std::cout << "First integer of RNG state: " << first_int << ", "
-          << "Stopping threshold: " << stopping_thresh << ", "
-          << "Pruning threshold: " << pruning_thresh << ", "
+          << "Stopping threshold: " << stopping_threshold << ", "
+          << "Pruning threshold: " << pruning_threshold << ", "
           << "Gamma: " << gamma << ", "
           << "Lapse rate: " << lapse_rate << ", "
           << "Opp scale: " << opp_scale << ", "
@@ -557,7 +557,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
 
   /**
    * Returns a pruned set of moves from the given position. Evaluates every
-   * move, and then removes the weakest moves as determined by `pruning_thresh`.
+   * move, and then removes the weakest moves as determined by `pruning_threshold`.
    *
    * @param b The board containing the starting position.
    * @param evalPlayer The player from whose perspective we're evaluating the
@@ -570,7 +570,7 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
     std::vector<typename Board::MoveT> candidates = get_moves(b, evalPlayer);
     std::size_t i = 1;
     while (i < candidates.size() && 
-            abs(candidates[0].val - candidates[i].val) < pruning_thresh) {
+            abs(candidates[0].val - candidates[i].val) < pruning_threshold) {
       ++i;
     }
     if (i < candidates.size())
@@ -652,9 +652,9 @@ class Heuristic : public std::enable_shared_from_this<Heuristic<Board>> {
   double get_gamma() const { return gamma; }
 
   /**
-   * @return The `stopping_thresh` parameter.
+   * @return The `stopping_threshold` parameter.
    */
-  double get_stopping_thresh() const { return stopping_thresh; }
+  double get_stopping_threshold() const { return stopping_threshold; }
 
   /**
    * Samples from the geometric distribution to determine the maximum number of
