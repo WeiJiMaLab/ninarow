@@ -84,8 +84,9 @@ def main():
 
     model = TreeSearch(verbose=args.verbose)
     fitter = MultiThreadedFitter(model, verbose=args.verbose, n_repeats=args.n_repeats, n_workers=args.n_workers)
+    bads_options = {"uncertainty_handling": True, "specify_target_noise": True, "display": "iter"}
     try:
-        params, train_ll = fitter.fit(train)
+        params, train_ll = fitter.fit(train, bads_options=bads_options)
         print("Finished fitting, evaluating held-out split...")
         test_ll, _ = fitter.evaluate(params, test)
     finally:
