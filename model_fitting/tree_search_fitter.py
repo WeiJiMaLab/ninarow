@@ -552,7 +552,7 @@ class MultiThreadedFitter:
             manual_seed=None,
             bads_options=None,
             checkpoint_path=None,
-            atol_mesh=1e-3,
+            atol_mesh=5e-3,
             atol_fun=1e-7):
         """
         Fit the model to data using a single-stage BADS optimization.

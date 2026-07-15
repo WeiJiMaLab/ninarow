@@ -31,11 +31,22 @@ weights:
     3IAR:     [ 1.6, 3.0,  4.4]
     4IAR:     [ 5.0, 9.6, 15.0]
 
-# Shared BADS options — the IBS noise-handling defaults every fitter/pipeline
-# needs (uncertainty_handling/specify_target_noise/noise_final_samples). Each
-# call site layers its own overrides (display, max_fun_evals, ...) on top of
-# this base rather than repeating these three by hand, so they can't drift.
+# Shared BADS options — the production values from monkey_4iar's
+# TreeSearchRunner.DEFAULT_BADS_OPTIONS (src/models.py), so a fit here uses the
+# same search budget as the certified production regime. Each call site layers
+# its own overrides (display, ...) on top of this base rather than repeating
+# these by hand, so they can't drift.
+#
+# Note: tol_fun/tol_mesh are NOT set here even though monkey_4iar's dict lists
+# them — MultiThreadedFitter.fit()/SingleThreadedFitter.fit() always recompute
+# tol_mesh/tol_fun from their atol_mesh/atol_fun arguments right before the fit
+# call, overwriting anything passed in via bads_options. Those two fitters'
+# atol_mesh defaults (5e-3) are the production value directly (not the unused
+# MultiRunner.ATOL_MESH=1e-3 constant in monkey_4iar, which was tested and
+# found to make no difference vs 5e-3) — see tree_search_fitter.py.
 bads:
   uncertainty_handling: true
   specify_target_noise: true
   noise_final_samples: 0
+  fun_eval_start: 20
+  max_fun_evals: 10000

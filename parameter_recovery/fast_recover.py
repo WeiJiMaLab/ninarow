@@ -27,6 +27,12 @@ this is a fast sanity check of the pipeline, not the production-scale
 validation.
 
 Output (mirrors data/sample's layout, one directory per synthetic participant):
+    data/recovery/recovery.md                    frozen record of the CLI args
+                                                  + config.yaml bounds used for
+                                                  this run (written once; a rerun
+                                                  with a different config in the
+                                                  same --out-dir errors instead
+                                                  of silently overwriting it)
     data/recovery/participant<i>/0.csv           synthetic trials (same schema
                                                   as data/sample: black/white/
                                                   move/color/trial_id/n_pieces)
@@ -46,12 +52,14 @@ Run one participant (SLURM array task -- see submit_recovery.sh):
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 from scipy.stats import qmc
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -76,10 +84,12 @@ _SAMPLE_DIR = _REPO_ROOT / "data" / "sample"
 
 
 def pooled_sample_boards():
-    """All data/sample participants' fold-0 boards, pooled into one table."""
-    csvs = sorted(_SAMPLE_DIR.glob("participant*/0.csv"))
+    """All data/sample participants' boards (every fold), pooled into one table --
+    the whole real board-position pool available to draw synthetic participants
+    from (not just fold 0), so --n-boards can exceed one fold's size."""
+    csvs = sorted(_SAMPLE_DIR.glob("participant*/*.csv"))
     if not csvs:
-        raise FileNotFoundError(f"No participant*/0.csv under {_SAMPLE_DIR}")
+        raise FileNotFoundError(f"No participant*/*.csv under {_SAMPLE_DIR}")
     return pd.concat([pd.read_csv(c) for c in csvs], ignore_index=True)
 
 
@@ -189,6 +199,84 @@ def run_one(index, theta_true, pool, args, names):
     return elapsed
 
 
+def _run_config(args):
+    """The subset of CLI args that define what a recovery run means -- excludes
+    --index (varies per array task) and --out-dir/--n-workers (not part of the
+    scientific config). Used both to write recovery.md and to check a rerun
+    against an existing one."""
+    return {
+        "n_participants": args.n_participants,
+        "n_boards": args.n_boards,
+        "n_starts": args.n_starts,
+        "n_repeats": args.n_repeats,
+        "max_evals": args.max_evals,
+        "exclude_feature_drop": args.exclude_feature_drop,
+        "seed": args.seed,
+    }
+
+
+def write_recovery_md(args, out_dir):
+    """Freeze the run config + config.yaml bounds into data/recovery/recovery.md,
+    once, so results in this directory stay traceable to exactly what produced
+    them even after config.yaml or fast_recover.py's defaults later change.
+
+    Safe under concurrent SLURM array tasks: the content is fully determined by
+    args (identical across every task in one array submission), so a race is at
+    worst a redundant identical write, made atomic via write-temp-then-rename.
+    If recovery.md already exists with a DIFFERENT config, refuses instead of
+    silently overwriting or silently mixing configs in one output directory.
+    """
+    out_dir = Path(out_dir)
+    md_path = out_dir / "recovery.md"
+    run_config = _run_config(args)
+
+    if md_path.exists():
+        existing = md_path.read_text()
+        start = existing.find("```json\n") + len("```json\n")
+        end = existing.find("\n```", start)
+        existing_config = json.loads(existing[start:end])
+        if existing_config != run_config:
+            raise SystemExit(
+                f"{md_path} already records a different run config than this "
+                f"invocation:\n  existing: {existing_config}\n  this run: {run_config}\n"
+                f"Use a different --out-dir for a differently-configured run."
+            )
+        return
+
+    with open(_MODEL_FITTING / "config.yaml") as f:
+        config_yaml_text = f.read()
+
+    lines = [
+        "# Recovery run config\n",
+        "\n",
+        "Frozen at first write so later config.yaml or fast_recover.py default "
+        "changes don't retroactively change what this directory's results mean. "
+        "If you need a different config, use a different --out-dir.\n",
+        "\n",
+        "## fast_recover.py arguments\n",
+        "\n",
+        "```json\n",
+        json.dumps(run_config, indent=2),
+        "\n```\n",
+        "\n",
+        "## model_fitting/config.yaml (bounds in effect for this run)\n",
+        "\n",
+        "```yaml\n",
+        config_yaml_text.rstrip("\n"),
+        "\n```\n",
+    ]
+
+    tmp = f"{md_path}.tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.writelines(lines)
+        f.flush()
+        os.fsync(f.fileno())
+    try:
+        os.rename(tmp, md_path)
+    except FileExistsError:
+        os.remove(tmp)  # lost the race to another array task; their write is equivalent
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-participants", type=int, default=30,
@@ -220,6 +308,7 @@ def main():
     args = parser.parse_args()
 
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    write_recovery_md(args, args.out_dir)
 
     pool = pooled_sample_boards()
     probe = TreeSearch(verbose=False, exclude_feature_drop=args.exclude_feature_drop)
