@@ -1,14 +1,14 @@
 """
 Smoke test: import fourbynine after build. Not a pytest module (no test_* functions).
 
-Run: ``python check_installation.py`` from ``model_fitting/`` or ``tests/``.
+Run: ``python check_installation.py`` from ``model_fitting/`` or ``tests/python/``.
 """
 import sys, os
 from pathlib import Path
 
 # This script can be run from anywhere.
 # model_fitting/ is the package root (contains _swig_fourbynine.so and fourbynine.py).
-MODEL_FITTING_DIR = Path(__file__).resolve().parent.parent
+MODEL_FITTING_DIR = Path(__file__).resolve().parent.parent.parent / "model_fitting"
 sys.path.insert(0, str(MODEL_FITTING_DIR))
 
 # Check that the compiled .so exists before trying to import it, so we can

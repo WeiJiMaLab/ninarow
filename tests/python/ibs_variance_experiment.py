@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "model_fitting"))
 from tree_search import TreeSearch
 from tree_search_fitter import SingleThreadedFitter
 

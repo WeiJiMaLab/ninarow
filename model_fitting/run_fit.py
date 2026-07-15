@@ -10,6 +10,7 @@ is held out as the test set; the rest are concatenated as the training set.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,16 @@ from tree_search import TreeSearch
 from tree_search_fitter import MultiThreadedFitter
 
 REQUIRED_COLUMNS = {"black", "white", "move", "color"}
+
+
+def default_n_workers():
+    """SLURM_CPUS_PER_TASK if running inside a job allocation, else a small fixed
+    default. MultiThreadedFitter's own default (n_workers<=0 -> os.cpu_count()) is NOT
+    safe to use directly outside a job: on a shared login/compute node os.cpu_count()
+    reports the WHOLE machine's core count, not any per-job allocation."""
+    if "SLURM_CPUS_PER_TASK" in os.environ:
+        return int(os.environ["SLURM_CPUS_PER_TASK"].split(",")[0])
+    return 6
 
 
 def check_data_dir(data_dir, n_splits):
@@ -69,7 +80,8 @@ def main():
     parser.add_argument("data_dir", type=str, help="Directory containing 0.csv..N-1.csv split files.")
     parser.add_argument("n_splits", type=int, help="Expected number of splits.")
     parser.add_argument("held_out_index", type=int, help="Index of the split to hold out as the test set.")
-    parser.add_argument("--n-workers", type=int, default=-1, help="Pool size for MultiThreadedFitter (default: all CPUs).")
+    parser.add_argument("--n-workers", type=int, default=None,
+                         help="Pool size for MultiThreadedFitter (default: SLURM_CPUS_PER_TASK if set, else 6).")
     parser.add_argument("--n-repeats", type=int, default=50, help="Max IBS repeats at the fine BADS polls.")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -82,8 +94,10 @@ def main():
     train, test = load_split(split_paths, args.held_out_index)
     print(f"Held-out split: {args.held_out_index} ({len(test)} rows); train: {len(train)} rows")
 
+    n_workers = args.n_workers if args.n_workers is not None else default_n_workers()
+    print(f"Using n_workers={n_workers}")
     model = TreeSearch(verbose=args.verbose)
-    fitter = MultiThreadedFitter(model, verbose=args.verbose, n_repeats=args.n_repeats, n_workers=args.n_workers)
+    fitter = MultiThreadedFitter(model, verbose=args.verbose, n_repeats=args.n_repeats, n_workers=n_workers)
     bads_options = {"uncertainty_handling": True, "specify_target_noise": True, "display": "iter"}
     try:
         params, train_ll = fitter.fit(train, bads_options=bads_options)

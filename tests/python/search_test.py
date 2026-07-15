@@ -4,8 +4,8 @@ import os
 import numpy as np
 import random
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add model_fitting/ (sibling of tests/) to path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "model_fitting"))
 
 from fourbynine import *
 from tree_search import TreeSearch

@@ -1,7 +1,7 @@
 """
 Profile SingleThreadedFitter.optimize() / evaluate() with cProfile.
 
-Run from repo root or tests/:
+Run from repo root or tests/python/:
   python profile_singlethreaded_fitter.py
   python profile_singlethreaded_fitter.py --n-iterations 5 --n-trials 20
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-_MODEL_FITTING = Path(__file__).resolve().parent.parent
+_MODEL_FITTING = Path(__file__).resolve().parent.parent.parent / "model_fitting"
 _TESTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_MODEL_FITTING))
 

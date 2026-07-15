@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from recovery_common import SIX_TEMPLATES, build_model
+from recovery_common import build_model
 
 
 def load_fold_params(runner_path):

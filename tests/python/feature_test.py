@@ -2,8 +2,8 @@
 import sys
 import os
 
-# Add the parent directory to sys.path to allow importing from model_fitting
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add model_fitting/ (sibling of tests/) to sys.path
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "model_fitting"))
 
 from fourbynine import *
 from tree_search import TreeSearch, feature_list_from_templates

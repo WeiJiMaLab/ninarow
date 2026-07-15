@@ -11,7 +11,7 @@ import pandas as pd
 
 from recovery_common import build_model
 
-from tree_search import fourbynine_board, fourbynine_pattern
+from fourbynine import fourbynine_board, fourbynine_pattern
 
 
 def generate_synthetic_dataset(params, boards, seed=0, verbose=False):

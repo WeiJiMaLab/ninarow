@@ -71,14 +71,14 @@ list(APPEND CXX_FLAGS "-fPIC" "-Wall" "-Wextra" "-Werror" "-Wno-unused" "-fexcep
 enable_testing()
 
 add_executable(tests
-  test_cpp/bfs_node_ut.cpp
-  test_cpp/ninarow_bfs_ut.cpp
-  test_cpp/ninarow_board_ut.cpp
-  test_cpp/ninarow_heuristic_ut.cpp
-  test_cpp/ninarow_heuristic_feature_ut.cpp
-  test_cpp/ninarow_vectorized_feature_evaluator_ut.cpp
-  test_cpp/ninarow_move_ut.cpp
-  test_cpp/ninarow_pattern_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/bfs_node_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_bfs_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_board_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_heuristic_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_heuristic_feature_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_vectorized_feature_evaluator_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_move_ut.cpp
+  ${CMAKE_SOURCE_DIR}/../tests/cpp/ninarow_pattern_ut.cpp
 )
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR})
 target_link_libraries(tests
@@ -137,7 +137,7 @@ target_link_libraries(swig_fourbynine Eigen3::Eigen)
 set_target_properties(swig_fourbynine PROPERTIES
     PREFIX "_"
     SUFFIX ".so"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/model_fitting"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../model_fitting"
 )
 
 add_custom_command(TARGET swig_fourbynine POST_BUILD 

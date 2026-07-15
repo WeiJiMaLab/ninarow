@@ -213,7 +213,7 @@ fi
 # macOS: avoid SWIG extension segfault on import by using -undefined dynamic_lookup
 CMAKE_EXTRA=()
 [[ "$OSTYPE" == "darwin"* ]] && CMAKE_EXTRA=(-DCMAKE_SHARED_LINKER_FLAGS="-undefined dynamic_lookup")
-cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discover_tests=OFF .. "${CMAKE_EXTRA[@]}"
+cmake -DPython3_EXECUTABLE=$PY_EXEC -DSWIG_EXECUTABLE=$SWIG_EXEC -Dgtest_discover_tests=OFF ../cpp "${CMAKE_EXTRA[@]}"
 
 # Limit build parallelism safely on login nodes
 cmake --build . --config Release
@@ -224,15 +224,15 @@ PY_VERSION=$("$PY_EXEC" --version 2>&1)
 echo ""
 echo "⚠️  _swig_fourbynine.so was compiled against: $PY_VERSION ($PY_EXEC)"
 echo "   Always use THIS python to run model_fitting scripts, e.g.:"
-echo "     $PY_EXEC model_fitting/tests/check_installation.py"
+echo "     $PY_EXEC tests/python/check_installation.py"
 echo ""
 
 # -----------------------------
 # 4. Run Python install test
 # -----------------------------
-if [ -f "../model_fitting/tests/check_installation.py" ]; then
+if [ -f "../tests/python/check_installation.py" ]; then
     echo "Running Python installation test..."
-    "$PY_EXEC" ../model_fitting/tests/check_installation.py || echo "⚠️ Python test script failed (check dependencies)."
+    "$PY_EXEC" ../tests/python/check_installation.py || echo "⚠️ Python test script failed (check dependencies)."
 else
     echo "No check_installation.py found, skipping."
 fi
