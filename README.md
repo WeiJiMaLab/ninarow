@@ -78,9 +78,8 @@ This is covered in detail in **[`model_fitting/README.md`](model_fitting/README.
 which walks through: what a "heuristic" and a "feature" are in plain terms,
 how to fit a model to one dataset, and how to run a full multi-attempt fit
 across many participants (either on your own machine or on a SLURM cluster).
-The short version: `model_fitting/run_fit.py` fits one dataset once;
-`model_fitting/scripts/run_multistart.py` is the tool for doing that
-properly (multiple random restarts, across multiple participants, at scale).
+The short version: `model_fitting/scripts/fit_all.py` is the tool for doing
+that (multiple random restarts, across multiple participants, at scale).
 
 ## Running the tests
 

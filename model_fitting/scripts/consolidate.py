@@ -1,6 +1,6 @@
 """Consolidate a fold's starts/<held_out>.<start>.json files into a winner.
 
-Used by run_multistart.py after all starts finish (sequential or parallel/sbatch).
+Used by fit_all.py after all starts finish (sequential or parallel/sbatch).
 Can also be run standalone once a starts/ directory is fully populated.
 """
 
@@ -13,11 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from multistart import default_model_factory, select_winner, validate_starts, write_result_json
-from run_fit import check_data_dir, load_split
+from fit_one_start import check_data_dir, load_split
 
 
-def reduce_starts(data_dir, n_splits, held_out_index, n_starts, n_workers=None,
-                   reeval_repeats=None, n_evals=None, allow_partial=False, verbose=False):
+def consolidate(data_dir, n_splits, held_out_index, n_starts, n_workers=None,
+                 reeval_repeats=None, n_evals=None, allow_partial=False, verbose=False):
     data_dir = Path(data_dir)
     split_paths = check_data_dir(data_dir, n_splits)
     train, test = load_split(split_paths, held_out_index)
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument("--allow-partial", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
-    reduce_starts(
+    consolidate(
         args.data_dir, args.n_splits, args.held_out_index, args.n_starts,
         n_workers=args.n_workers, allow_partial=args.allow_partial, verbose=args.verbose,
     )

@@ -1,5 +1,6 @@
-"""Multistart fitting primitives shared by scripts/run_multistart.py (interactive
-driver) and scripts/fit_one_start.py (per-start worker invoked by sbatch).
+"""Multistart fitting primitives shared by scripts/fit_all.py (interactive
+driver), scripts/fit_one_start.py (per-start worker invoked by sbatch), and
+scripts/consolidate.py (winner selection from finished starts).
 
 Mirrors monkey_4iar's src/models.py multistart machinery (start_x0 / write_start_json /
 validate_starts / re-eval + argmin winner selection), reimplemented here so ninarow
@@ -14,13 +15,22 @@ import numpy as np
 
 from tree_search import TreeSearch
 from tree_search_fitter import MultiThreadedFitter, BADS_DEFAULTS
-from run_fit import default_n_workers
 
 # Re-evaluation config for winner selection: a single fit's IBS NLL is too noisy to
 # argmin directly (the start that got lucky noise looks best, not the one that's
 # actually best), so every start is re-scored at higher IBS repeats before picking.
 REEVAL_REPEATS = 50
 REEVAL_N_EVALS = 5
+
+
+def default_n_workers():
+    """SLURM_CPUS_PER_TASK if running inside a job allocation, else a small fixed
+    default. MultiThreadedFitter's own default (n_workers<=0 -> os.cpu_count()) is NOT
+    safe to use directly outside a job: on a shared login/compute node os.cpu_count()
+    reports the WHOLE machine's core count, not any per-job allocation."""
+    if "SLURM_CPUS_PER_TASK" in os.environ:
+        return int(os.environ["SLURM_CPUS_PER_TASK"].split(",")[0])
+    return 6
 
 
 def start_x0(start, model, seed=0):
@@ -118,15 +128,22 @@ def validate_starts(starts, expected, label, allow_partial=False):
     return clean
 
 
-def fit_one_start(model, train_data, start, seed=0, n_workers=None, n_repeats=50, verbose=False):
+def fit_one_start(model, train_data, start, seed=0, n_workers=None, n_repeats=50, verbose=False,
+                   bads_options_overrides=None):
     """Run a single BADS start from start_x0(start, model, seed). Returns a start record
-    (x0, params, train_nll_raw) — the same schema write_start_json persists."""
+    (x0, params, train_nll_raw) — the same schema write_start_json persists.
+
+    bads_options_overrides layers on top of BADS_DEFAULTS (e.g. {"max_fun_evals": 300}
+    to cap a smoke-test run) — production callers never pass this, so behavior there
+    is unchanged."""
     if n_workers is None:
         n_workers = default_n_workers()
     x0 = start_x0(start, model, seed)
     model.initial_params = x0
     fitter = MultiThreadedFitter(model, verbose=verbose, n_repeats=n_repeats, n_workers=n_workers)
     bads_options = {**BADS_DEFAULTS, "display": "iter" if verbose else "off"}
+    if bads_options_overrides:
+        bads_options.update(bads_options_overrides)
     try:
         params, train_nll = fitter.fit(train_data, bads_options=bads_options)
     finally:
@@ -181,5 +198,9 @@ def select_winner(model_factory, starts, train_data, test_data, n_workers=None,
     return winner_idx, starts[winner_idx], train_nll, test_nll
 
 
-def default_model_factory(verbose=False):
-    return lambda: TreeSearch(verbose=verbose)
+def default_model_factory(verbose=False, exclude_feature_drop=False):
+    """exclude_feature_drop=True mirrors monkey_4iar's frozen-feature_drop regime:
+    drops it from the fitted parameter vector entirely (set_params re-inserts 0.0
+    at its canonical control index) rather than merely pinning it to a narrow
+    plausible range while still letting BADS search it as a free dimension."""
+    return lambda: TreeSearch(verbose=verbose, exclude_feature_drop=exclude_feature_drop)

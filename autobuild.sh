@@ -289,5 +289,5 @@ cd ../build
 
 echo -e "\n----------------------------------------"
 printf "\e[32m🎉 Build Complete.\e[0m\n"
-echo "To fit a model, see model_fitting/scripts/run_multistart.py or model_fitting/parameter_recovery/"
+echo "To fit a model, see model_fitting/scripts/fit_all.py or model_fitting/parameter_recovery/"
 echo "----------------------------------------"

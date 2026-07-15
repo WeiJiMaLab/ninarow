@@ -24,9 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from multistart import default_model_factory, fit_one_start, select_winner, write_result_json, write_start_json
-from run_fit import check_data_dir, load_split
+from fit_one_start import check_data_dir, load_split
 
-SBATCH_TEMPLATE = Path(__file__).resolve().parent / "fit_one_start.sbatch"
 MODEL_FITTING_DIR = Path(__file__).resolve().parent.parent
 
 _USE_COLOR = sys.stdout.isatty()
@@ -177,13 +176,16 @@ def run_parallel(participants, n_splits, n_starts, n_repeats, account, cores_per
                 f"--cpus-per-task={cores_per_job}",
                 f"--time={fit_time}",
                 f"--array=0-{n_starts - 1}",
-                f"--export=ALL,MODEL_FITTING_DIR={MODEL_FITTING_DIR},DATA_DIR={participant_dir},"
-                f"N_SPLITS={n_splits},HELD_OUT_INDEX={held_out_index},N_REPEATS={n_repeats}",
                 "--job-name", f"ninarow_fit_{participant_dir.name}_{held_out_index}",
                 f"--output={logs_dir}/multistart_%A_%a.log",
                 f"--error={logs_dir}/multistart_%A_%a.log",
                 "--parsable",
-                str(SBATCH_TEMPLATE),
+                "--wrap",
+                (
+                    f"cd {MODEL_FITTING_DIR} && "
+                    f"python scripts/fit_one_start.py {participant_dir} {n_splits} "
+                    f"{held_out_index} --n-repeats {n_repeats} --n-workers {cores_per_job}"
+                ),
             ]
             try:
                 fit_job_id = subprocess.check_output(
@@ -211,7 +213,7 @@ def run_parallel(participants, n_splits, n_starts, n_repeats, account, cores_per
                 "--wrap",
                 (
                     f"cd {Path(__file__).resolve().parent.parent} && "
-                    f"python scripts/reduce_starts.py {participant_dir} {n_splits} "
+                    f"python scripts/consolidate.py {participant_dir} {n_splits} "
                     f"{held_out_index} {n_starts} --n-workers 4"
                 ),
             ]

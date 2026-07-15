@@ -52,14 +52,12 @@ In the code:
 model_fitting/
   tree_search.py          The TreeSearch model class (see Concepts above)
   tree_search_fitter.py   The fitting engines (see "How fitting works" below)
-  run_fit.py              Fit one model to one dataset, once
   multistart.py           Shared code for running many fit attempts and picking the best one
-  scripts/                The tool you actually run for a real fit (see below)
+  scripts/                The tools you actually run for a real fit (see below)
   parameter_recovery/     A sanity check: can the fitting process recover known answers?
   feature_generator.py    Turns a feature template into the actual board patterns
   ninarow_utilities.py    A couple of helper functions
   fourbynine.py / _swig_fourbynine.so   Auto-generated Python binding to the C++ code (don't edit)
-  plot_treesearch.ipynb   Notebook for visually inspecting a fitted model
   config.yaml             Default starting values and bounds for each weight
   requirements.txt
 ```
@@ -134,39 +132,11 @@ Two fitting engines live in `tree_search_fitter.py`:
 Earlier versions of this project had a different fitting script called
 `model_fit.py`. It's been replaced by `tree_search_fitter.py` and is not
 present in this checkout. If you find a copy elsewhere, treat it as
-historical — use `run_fit.py` or `scripts/run_multistart.py` instead.
+historical — use `scripts/fit_all.py` instead.
 
-## Fitting one dataset: `run_fit.py`
+## Fitting a dataset: `scripts/fit_all.py`
 
-Use this to fit a model once, on one dataset, holding out one chunk of the
-data to check how well it generalizes (a single train/test split).
-
-```
-python run_fit.py <data_dir> <n_splits> <held_out_index> [--n-workers N] [--n-repeats N] [--verbose]
-```
-
-- `data_dir` should contain files named `0.csv`, `1.csv`, ..., up to
-  `n_splits - 1`. Each file is one "fold" (a chunk of the data).
-- `held_out_index` picks which fold is used as the held-out test set; the
-  rest are combined into the training set.
-- Each CSV needs columns `black`, `white`, `move`, `color` (numbers
-  encoding the board state and what was played, and which side moved).
-  Two optional columns, `trial_id` and `n_pieces`, get carried through if
-  present but aren't required.
-
-Try it on the included sample data:
-
-```
-python run_fit.py ../data/sample/participant1 3 0 --verbose
-```
-
-This trains on `1.csv` + `2.csv`, tests on `0.csv`, and prints the fitted
-weights plus how well they explain the training and test data.
-
-## Fitting many datasets, properly: `scripts/run_multistart.py`
-
-`run_fit.py` does one fit, from one starting point. In practice, you want
-more than that:
+In practice you want more than a single fit:
 
 - **Multiple random restarts** ("multistart") — the optimizer can get stuck
   in a locally-okay-but-not-great answer, so you fit several times from
@@ -174,7 +144,7 @@ more than that:
 - **Multiple participants/datasets at once** — if you're fitting the same
   kind of model to many people's or animals' data.
 
-`scripts/run_multistart.py` is an interactive tool that handles both. Point
+`scripts/fit_all.py` is an interactive tool that handles both. Point
 it at a folder that contains one subfolder per participant, each holding
 its own `0.csv` / `1.csv` / ... :
 
@@ -184,14 +154,19 @@ data_dir/
   participant2/0.csv 1.csv 2.csv
 ```
 
+- Each CSV needs columns `black`, `white`, `move`, `color` (numbers
+  encoding the board state and what was played, and which side moved).
+  Two optional columns, `trial_id` and `n_pieces`, get carried through if
+  present but aren't required.
+
 ```
-python scripts/run_multistart.py <data_dir> <n_splits> [--n-starts N] [--n-repeats N] [--n-workers N] [--verbose] [--yes]
+python scripts/fit_all.py <data_dir> <n_splits> [--n-starts N] [--n-repeats N] [--n-workers N] [--verbose] [--yes]
 ```
 
 Try it on the sample data:
 
 ```
-python scripts/run_multistart.py ../data/sample 3 --n-starts 2 --n-repeats 20
+python scripts/fit_all.py ../data/sample 3 --n-starts 2 --n-repeats 20
 ```
 
 When you run it, it will:
@@ -216,8 +191,9 @@ what ends up in them.)
   using regular multiprocessing. Good for the sample data, a small
   dataset, or when you're debugging.
 - **Parallel** submits jobs to a SLURM cluster: one array job per
-  (participant, held-out fold), where each array task is one random
-  restart, followed by a job that waits for those to finish and picks the
+  (participant, held-out fold), where each array task runs
+  `scripts/fit_one_start.py` for one random restart, followed by a
+  `scripts/consolidate.py` job that waits for those to finish and picks the
   best one. You'll be asked for:
   - Your SLURM account.
   - How many CPU cores per job (default: 8).
@@ -235,22 +211,22 @@ machine reports" — on a shared cluster node, that can be 100+ cores, even
 though you're not the only person using that machine. Spawning that many
 processes will slow down or crash other people's work.
 
-In practice this is already handled for you: both `run_fit.py` and
-`scripts/run_multistart.py` pick a safe default automatically (use the
-number of cores SLURM actually gave you, if you're inside a job; otherwise
-just 6) instead of falling back to "every core on the machine." But if
-you're calling the fitting code directly instead of through these scripts,
-always pass an explicit worker count.
+In practice this is already handled for you: `scripts/fit_all.py` picks a
+safe default automatically (use the number of cores SLURM actually gave
+you, if you're inside a job; otherwise just 6) instead of falling back to
+"every core on the machine." But if you're calling the fitting code
+directly instead of through this script, always pass an explicit worker
+count.
 
 ### A couple of SLURM quirks worth knowing
 
 If you're curious why the SLURM-submission code looks the way it does:
 
-- The submitted job script doesn't try to figure out its own file location
-  the usual way (`$BASH_SOURCE`) — under SLURM, the script gets copied to a
-  temporary spool location before running, so that trick doesn't point
-  where you'd expect. Instead, `run_multistart.py` explicitly tells the job
-  where the code lives via an environment variable.
+- Each job's command (`cd <repo path> && python scripts/...`) is submitted
+  inline via `sbatch --wrap`, with the repo path baked in as an absolute
+  path rather than relying on the submitted script figuring out its own
+  location — under SLURM the working directory at job start isn't
+  guaranteed to be where you ran `sbatch` from.
 - Log file locations are passed in as full absolute paths, rather than
   relative ones — SLURM resolves relative log paths against the directory
   you submitted from, before the job itself has a chance to set up its own
@@ -335,8 +311,6 @@ itself (not with real data).
   one for converting between an older parameterization and this one.
 - `fourbynine.py` / `_swig_fourbynine.so` — the auto-generated Python
   interface to the C++ engine. Don't hand-edit these.
-- `plot_treesearch.ipynb` — a notebook for looking at a fitted model's
-  behavior visually.
 
 ## Running the tests
 

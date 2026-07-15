@@ -1,6 +1,6 @@
 """Fit ONE multistart start for a held-out CV fold; writes starts/<held_out>.<start>.json.
 
-Invoked once per SLURM array task by run_multistart.py's parallel path (task id ->
+Invoked once per SLURM array task by fit_all.py's parallel path (task id ->
 start index). Not meant to be run standalone outside that array, though it works fine
 run directly for debugging (pass --start explicitly).
 """
@@ -10,10 +10,56 @@ import os
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from multistart import default_model_factory, fit_one_start, write_start_json
-from run_fit import check_data_dir, load_split
+
+REQUIRED_COLUMNS = {"black", "white", "move", "color"}
+
+
+def check_data_dir(data_dir, n_splits):
+    """Verify data_dir exists and contains exactly the expected 0..n_splits-1 fold files."""
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f"Data directory does not exist: {data_dir}")
+
+    expected = [data_dir / f"{i}.csv" for i in range(n_splits)]
+    missing = [p for p in expected if not p.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"Expected {n_splits} split file(s) in {data_dir}, missing: "
+            + ", ".join(p.name for p in missing)
+        )
+
+    found = sorted(p.name for p in data_dir.glob("*.csv"))
+    expected_names = sorted(p.name for p in expected)
+    if found != expected_names:
+        raise ValueError(
+            f"{data_dir} does not contain exactly the expected {n_splits} split(s). "
+            f"Expected {expected_names}, found {found}."
+        )
+
+    print(f"Found expected {n_splits} split(s) in {data_dir}")
+    return expected
+
+
+def read_fold_csv(path):
+    df = pd.read_csv(path)
+    missing_columns = REQUIRED_COLUMNS - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"{path}: missing columns: {missing_columns}")
+    return df
+
+
+def load_split(split_paths, held_out_index):
+    """(train, test): test = the held-out fold; train = the rest, concatenated."""
+    folds = [read_fold_csv(p) for p in split_paths]
+    test = folds[held_out_index]
+    train = pd.concat(
+        [fold for i, fold in enumerate(folds) if i != held_out_index]
+    ).reset_index(drop=True)
+    return train, test
 
 
 def main():
