@@ -161,10 +161,14 @@ data_dir/
   present but aren't required.
 
 ```
-python scripts/fit_all.py <data_dir> <n_splits> [--n-starts N] [--n-repeats N] [--n-workers N] [--verbose] [--yes]
+python scripts/fit_all.py [data_dir] [n_splits] [--n-starts N] [--n-repeats N] [--n-workers N] [--verbose] [--yes]
 ```
 
-Try it on the sample data:
+`data_dir` and `n_splits` are optional — omit either (or both) and it'll prompt you
+for them interactively, defaulting to `../data/sample` and `3`. Running it bare
+(`python scripts/fit_all.py`) is the easiest way to try it on the sample data.
+
+To skip the prompts, pass both explicitly:
 
 ```
 python scripts/fit_all.py ../data/sample 3 --n-starts 2 --n-repeats 20

@@ -74,6 +74,21 @@ def prompt_yes_no(question):
         print(c("Please enter y or n.", "red"))
 
 
+def prompt_text(question, default):
+    raw = input(f"{c(question, 'bold')} {c(f'[{default}]', 'dim')}: ").strip()
+    return raw or default
+
+
+def prompt_int(question, default):
+    while True:
+        raw = input(f"{c(question, 'bold')} {c(f'[{default}]', 'dim')}: ").strip()
+        if not raw:
+            return default
+        if raw.isdigit():
+            return int(raw)
+        print(c("Please enter a whole number.", "red"))
+
+
 def detect_participants(data_dir, n_splits):
     """Subdirectories of data_dir that each contain exactly n_splits fold CSVs."""
     participants = []
@@ -253,8 +268,11 @@ def run_parallel(participants, n_splits, n_starts, n_repeats, account, cores_per
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("data_dir", type=str, help="Parent directory of per-participant fold subdirectories.")
-    parser.add_argument("n_splits", type=int)
+    parser.add_argument("data_dir", type=str, nargs="?", default=None,
+                         help="Parent directory of per-participant fold subdirectories. "
+                              "Prompted for (default: ../data/sample) if omitted.")
+    parser.add_argument("n_splits", type=int, nargs="?", default=None,
+                         help="Prompted for (default: 3) if omitted.")
     parser.add_argument("--n-starts", type=int, default=5)
     parser.add_argument("--n-workers", type=int, default=None,
                          help="Sequential path only (default: SLURM_CPUS_PER_TASK if set, else 6).")
@@ -264,7 +282,16 @@ def main():
     args = parser.parse_args()
 
     print(c("Beginning 4IAR fitting ...", "bold"))
-    data_dir = Path(args.data_dir)
+
+    data_dir_raw = args.data_dir
+    if data_dir_raw is None:
+        data_dir_raw = prompt_text("Data directory (parent of per-participant fold subfolders)",
+                                    str(MODEL_FITTING_DIR.parent / "data" / "sample"))
+    n_splits = args.n_splits
+    if n_splits is None:
+        n_splits = prompt_int("Number of CV splits (fold CSVs per participant)", 3)
+    args.n_splits = n_splits
+    data_dir = Path(data_dir_raw)
 
     print("Detecting folder ...")
     if not data_dir.is_dir():
