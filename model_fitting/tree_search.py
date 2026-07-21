@@ -5,7 +5,7 @@ import random
 import fourbynine
 import pickle
 import yaml
-from fourbynine import DoubleVector
+from fourbynine import DoubleVector, fourbynine_board, fourbynine_pattern
 from utils import (
     make_features_from_groups,
     create_feature
