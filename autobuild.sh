@@ -20,7 +20,7 @@ else
         echo "🔥 Detected Torch cluster environment"
         env=5
     # Check for local miniforge installation
-    elif [[ -d "/scratch/$USER/conda/miniforge3" ]]; then
+    elif [[ -d "/scratch/$USER/conda/miniforge3" || -d "/scratch/$USER/miniforge3" ]]; then
         echo "🐍 Detected local miniforge installation"
         env=2
     elif [[ -n "$SLURM_CLUSTER_NAME" ]]; then
@@ -114,7 +114,10 @@ case $env in
 
     2)
         echo "Setting up for Greene Cluster..."
-        source /scratch/$USER/conda/miniforge3/etc/profile.d/conda.sh
+        # miniforge lives in different places across NYU clusters/users; try known spots.
+        for _c in "/scratch/$USER/conda/miniforge3" "/scratch/$USER/miniforge3" "$HOME/miniforge3" "$HOME/miniconda3"; do
+            [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
+        done
         conda activate env || {
             echo "Conda environment 'env' not found. Please create it first:"
             echo "  conda create -n env python cmake swig boost"
@@ -145,7 +148,10 @@ case $env in
 
     5)
         echo "Setting up for Torch cluster..."
-        source /scratch/$USER/conda/miniforge3/etc/profile.d/conda.sh
+        # miniforge lives in different places across NYU clusters/users; try known spots.
+        for _c in "/scratch/$USER/conda/miniforge3" "/scratch/$USER/miniforge3" "$HOME/miniforge3" "$HOME/miniconda3"; do
+            [ -f "$_c/etc/profile.d/conda.sh" ] && { source "$_c/etc/profile.d/conda.sh"; break; }
+        done
         conda activate env || {
             echo "Conda environment 'env' not found. Please create it first:"
             echo "  conda create -n env python cmake swig boost"

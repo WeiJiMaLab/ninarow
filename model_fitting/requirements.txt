@@ -4,9 +4,11 @@ atomics==1.0.3
 graphviz
 matplotlib>=3.7.1
 networkx==3.2.1
+numba>=0.60          # tree_search_fitter.py imports numba (int32/float64/boolean)
 numpy>=1.26.4
 pandas>=1.5.3
 PyBADS==1.0.5
+PyYAML>=6.0          # tree_search.py / tree_search_fitter.py load config.yaml
 PyQt6==6.7.1
 PyQt6-Qt6==6.7.3
 PyQt6_sip==13.8.0
